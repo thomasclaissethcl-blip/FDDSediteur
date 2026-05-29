@@ -1767,6 +1767,30 @@ ${article.bodyHtml || ''}`.trim();
     window.addEventListener('scroll', closeContextHelp, true);
   }
 
+
+  function setupUserGuideModal() {
+    const openButton = $('#open-user-guide');
+    const closeButton = $('#close-user-guide');
+    const dialog = $('#user-guide-dialog');
+    if (!openButton || !closeButton || !dialog) return;
+
+    openButton.addEventListener('click', () => {
+      if (typeof dialog.showModal === 'function') {
+        dialog.showModal();
+      } else {
+        dialog.setAttribute('open', '');
+      }
+    });
+
+    closeButton.addEventListener('click', () => dialog.close?.() || dialog.removeAttribute('open'));
+
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) {
+        dialog.close?.() || dialog.removeAttribute('open');
+      }
+    });
+  }
+
   function switchTab(tabName) {
     $$('.tab').forEach((button) => button.classList.toggle('is-active', button.dataset.tab === tabName));
     $$('.tab-panel').forEach((panel) => panel.classList.toggle('is-active', panel.id === `tab-${tabName}`));
@@ -1832,5 +1856,6 @@ ${article.bodyHtml || ''}`.trim();
   setupRichEditors();
   bindEvents();
   setupContextHelp();
+  setupUserGuideModal();
   loadSavedConfig();
 })();
