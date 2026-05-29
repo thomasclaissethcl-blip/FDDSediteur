@@ -508,7 +508,7 @@
   }
 
   async function readEditorLock() {
-    const branch = getLockBranchName();
+    const branch = state.config.branch || 'main';
     const ref = await getGitRefOptional(branch);
     if (!ref?.object?.sha) return null;
     const text = await getTextFileFromRef(getLockFilePath(), branch);
@@ -539,26 +539,71 @@
   }
 
   async function commitLockData(lockData, createBranch = false) {
-    const lockBranch = getLockBranchName();
-    const parentRef = createBranch ? await getGitRef(state.config.branch) : await getGitRef(lockBranch);
-    const parentSha = parentRef.object?.sha;
-    if (!parentSha) throw new Error('Impossible de déterminer le commit de référence du verrou.');
-    const parentCommit = await getGitCommit(parentSha);
-    const baseTreeSha = parentCommit.tree?.sha;
-    if (!baseTreeSha) throw new Error('Impossible de déterminer l’arbre Git du verrou.');
+    // Le verrou est volontairement écrit sur la branche cible du site.
+    // On ne crée plus de branche technique fdds-editor-lock.
+    const message = `Verrou éditorial FDDS — ${lockData.locked ? 'prise' : 'renouvellement'} — ${lockData.editorName}`;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const parentRef = await getGitRef(state.config.branch);
+        const parentSha = parentRef.object?.sha;
+        if (!parentSha) throw new Error('Impossible de déterminer le commit de référence du verrou.');
+        const parentCommit = await getGitCommit(parentSha);
+        const baseTreeSha = parentCommit.tree?.sha;
+        if (!baseTreeSha) throw new Error('Impossible de déterminer l’arbre Git du verrou.');
 
-    const newTree = await createGitTree(baseTreeSha, [{
-      path: repoPath(getLockFilePath()),
-      mode: '100644',
-      type: 'blob',
-      content: `${JSON.stringify(lockData, null, 2)}\n`
-    }]);
-    const newCommit = await createGitCommit(`Verrou éditorial FDDS — ${lockData.locked ? 'prise' : 'libération'} — ${lockData.editorName}`, newTree.sha, parentSha);
+        const newTree = await createGitTree(baseTreeSha, [{
+          path: repoPath(getLockFilePath()),
+          mode: '100644',
+          type: 'blob',
+          content: `${JSON.stringify(lockData, null, 2)}\n`
+        }]);
+        const newCommit = await createGitCommit(message, newTree.sha, parentSha);
+        await updateGitRef(state.config.branch, newCommit.sha, false);
+        state.lock.lastRemote = lockData;
+        return newCommit;
+      } catch (error) {
+        const conflict = String(error.message || '').includes('GitHub 409') || String(error.message || '').includes('GitHub 422');
+        if (!conflict || attempt === 3) throw error;
+        await sleep(500 * attempt);
+      }
+    }
+  }
 
-    if (createBranch) await createGitRef(lockBranch, newCommit.sha);
-    else await updateGitRef(lockBranch, newCommit.sha, true);
-    state.lock.lastRemote = lockData;
-    return newCommit;
+  async function deleteEditorLockFile() {
+    const message = `Verrou éditorial FDDS — libération — ${state.lock.editorName || 'Chroniqueur anonyme'}`;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const parentRef = await getGitRef(state.config.branch);
+        const parentSha = parentRef.object?.sha;
+        if (!parentSha) throw new Error('Impossible de déterminer le commit de référence du verrou.');
+        const parentCommit = await getGitCommit(parentSha);
+        const baseTreeSha = parentCommit.tree?.sha;
+        if (!baseTreeSha) throw new Error('Impossible de déterminer l’arbre Git du verrou.');
+        const newTree = await createGitTree(baseTreeSha, [{
+          path: repoPath(getLockFilePath()),
+          mode: '100644',
+          type: 'blob',
+          sha: null
+        }]);
+        const newCommit = await createGitCommit(message, newTree.sha, parentSha);
+        await updateGitRef(state.config.branch, newCommit.sha, false);
+        return newCommit;
+      } catch (error) {
+        const notFound = String(error.message || '').includes('GitHub 422') && String(error.message || '').includes('does not exist');
+        if (notFound) return null;
+        const conflict = String(error.message || '').includes('GitHub 409') || String(error.message || '').includes('GitHub 422');
+        if (!conflict || attempt === 3) throw error;
+        await sleep(500 * attempt);
+      }
+    }
+  }
+
+  async function cleanupLegacyLockBranch() {
+    try {
+      await deleteGitRefOptional(getLockBranchName());
+    } catch (error) {
+      log(`Ancienne branche de verrou non supprimée : ${error.message}`, 'error');
+    }
   }
 
   function showBusyDialog(lock) {
@@ -593,6 +638,7 @@
   async function acquireEditorLock({ force = false } = {}) {
     initLockIdentity();
     state.lock.releasing = false;
+    await cleanupLegacyLockBranch();
     const remote = await readEditorLock();
     const remoteLock = remote?.data;
     const activeOtherLock = isLockActive(remoteLock) && !isOwnLock(remoteLock);
@@ -696,7 +742,7 @@
       }
 
       try {
-        await deleteGitRefOptional(getLockBranchName());
+        await deleteEditorLockFile();
       } catch (deleteError) {
         log(`Suppression directe du verrou impossible. Tentative de libération par écriture : ${deleteError.message}`, 'error');
         remote = await readEditorLock();
@@ -1130,71 +1176,50 @@ ${home.introHtml || ''}
 
   function hasCharacterCardData(card) {
     if (!card || typeof card !== 'object') return false;
-    // Le texte alternatif seul ne doit pas suffire à créer une carte.
-    // Il est souvent prérempli avec le titre de l'article et provoquait des cartes fantômes.
-    return ['image', 'caption', 'type', 'activity', 'entourage', 'enemyOf', 'firstAppearance', 'status']
+    return ['caption', 'type', 'activity', 'entourage', 'enemyOf', 'firstAppearance', 'status']
       .some((key) => stripHTML(String(card[key] || '')).trim());
   }
 
-  function hasDistinctCharacterCardData(card, articleImage = '') {
-    if (!card || typeof card !== 'object') return false;
-    const hasTextualData = ['caption', 'type', 'activity', 'entourage', 'enemyOf', 'firstAppearance', 'status']
-      .some((key) => stripHTML(String(card[key] || '')).trim());
-    if (hasTextualData) return true;
-    const image = String(card.image || '').trim();
-    return Boolean(image && image !== String(articleImage || '').trim());
+  function hasExplicitCharacterCardFlag(card) {
+    return Boolean(card && typeof card === 'object' && Object.prototype.hasOwnProperty.call(card, 'enabled'));
   }
 
-  function articleHasCharacterCard(article) {
+  function isCharacterArticle(article) {
     if (!article) return false;
-    const card = article.characterCard && typeof article.characterCard === 'object'
-      ? article.characterCard
-      : null;
-    if (card?.enabled === false) return false;
-    if (card?.enabled === true) return hasDistinctCharacterCardData(card, article.image);
-    const extracted = extractCharacterCardFromBody(article.bodyHtml || '');
-    return extracted.found || hasDistinctCharacterCardData(card, article.image);
+    return article.template === 'character' || article.type === 'character';
   }
 
-  function articleTemplateValue(article) {
-    if (!article) return 'general';
-    const categories = Array.isArray(article.categories) ? article.categories : [];
-    return article.template === 'character'
-      || article.type === 'character'
-      || categories.includes('Personnage')
-      ? 'character'
-      : 'general';
-  }
-
-  function normalizeCharacterCard(card, bodyHtml = '', articleImage = '') {
+  function normalizeCharacterCard(card, bodyHtml = '', categories = []) {
     const extracted = extractCharacterCardFromBody(bodyHtml);
     const inputCard = card && typeof card === 'object' ? card : {};
+    const explicit = hasExplicitCharacterCardFlag(inputCard);
     const merged = { ...defaultCharacterCard(), ...extracted.card, ...inputCard };
 
-    if (inputCard.enabled === false) {
-      merged.enabled = false;
-    } else if (inputCard.enabled === true) {
-      merged.enabled = hasDistinctCharacterCardData(merged, articleImage);
-    } else {
-      merged.enabled = Boolean(extracted.found || hasDistinctCharacterCardData(merged, articleImage));
+    if (inputCard.manual === true) {
+      merged.enabled = inputCard.enabled === true;
+      return merged;
     }
 
-    if (!merged.enabled) {
-      return defaultCharacterCard();
+    if (explicit) {
+      // Une carte préremplie automatiquement avec seulement le titre ou l’image ne doit pas devenir une vraie carte.
+      merged.enabled = inputCard.enabled === true && hasCharacterCardData(merged);
+      return merged;
     }
+
+    merged.enabled = Boolean(extracted.found && hasCharacterCardData(merged));
     return merged;
   }
 
   function normalizeArticle(article) {
     const categories = Array.isArray(article.categories) ? article.categories : [];
     const extracted = extractCharacterCardFromBody(article.bodyHtml || '');
-    const characterCard = normalizeCharacterCard(article.characterCard, article.bodyHtml || '', article.image || '');
-    const template = article.template || article.type || (categories.includes('Personnage') ? 'character' : 'general');
+    const characterCard = normalizeCharacterCard(article.characterCard, article.bodyHtml || '', categories);
+    const template = article.template || article.type || (characterCard.enabled ? 'character' : 'general');
     return {
       slug: article.slug || slugify(article.title),
       title: article.title || 'Nouvel article',
       summary: article.summary || '',
-      image: article.image || (characterCard.enabled ? characterCard.image : '') || '',
+      image: article.image || characterCard.image || '',
       categories,
       template: template === 'character' ? 'character' : 'general',
       characterCard,
@@ -1271,10 +1296,6 @@ ${home.introHtml || ''}
       label.innerHTML = `<input type="checkbox" value="${escapeHTML(category.label)}" ${checked}> ${escapeHTML(category.label)}`;
       const input = label.querySelector('input');
       input.addEventListener('change', () => {
-        const selectedCategories = collectArticleCategories();
-        if (selectedCategories.includes('Personnage') && els.articleTemplate?.value !== 'character') {
-          els.articleTemplate.value = 'character';
-        }
         renderArticlePreview();
       });
       els.articleCategories.appendChild(label);
@@ -1333,22 +1354,15 @@ ${home.introHtml || ''}
     return Boolean(els.characterCardToggle?.checked);
   }
 
-  function setCharacterCardControls(enabled) {
+  function syncCharacterControls(enabled) {
     if (els.characterCardToggle) els.characterCardToggle.checked = Boolean(enabled);
     setCharacterPanelVisible(enabled);
   }
 
-  function syncCharacterControls(enabled) {
-    // Compatibilité avec les anciens appels : cette fonction pilote désormais uniquement
-    // la carte personnage. Le type d'article reste indépendant.
-    setCharacterCardControls(enabled);
-  }
-
   function renderCharacterCardFields(article) {
-    const hasCard = articleHasCharacterCard(article);
-    if (els.articleTemplate) els.articleTemplate.value = articleTemplateValue(article);
-    setCharacterCardControls(hasCard);
-    const card = { ...defaultCharacterCard(), ...(hasCard ? (article?.characterCard || {}) : {}) };
+    if (els.articleTemplate) els.articleTemplate.value = isCharacterArticle(article) ? 'character' : 'general';
+    const card = { ...defaultCharacterCard(), ...(article?.characterCard || {}) };
+    syncCharacterControls(Boolean(card.enabled));
     if (els.characterImage) els.characterImage.value = card.image || article?.image || '';
     if (els.characterImageSelect) els.characterImageSelect.value = card.image || article?.image || '';
     if (els.characterImageAlt) els.characterImageAlt.value = card.imageAlt || article?.title || '';
@@ -1363,10 +1377,13 @@ ${home.introHtml || ''}
 
   function collectCharacterCardFromForm() {
     const enabled = isCharacterFormEnabled();
-    if (!enabled) return defaultCharacterCard();
-    const card = {
+    if (!enabled) {
+      return { ...defaultCharacterCard(), enabled: false, manual: false };
+    }
+    return {
       ...defaultCharacterCard(),
       enabled: true,
+      manual: true,
       image: els.characterImage?.value?.trim() || '',
       imageAlt: els.characterImageAlt?.value?.trim() || '',
       caption: els.characterCaption?.value?.trim() || '',
@@ -1377,8 +1394,6 @@ ${home.introHtml || ''}
       firstAppearance: getMiniHTML(els.characterFirstAppearance),
       status: getMiniHTML(els.characterStatus)
     };
-    if (!hasCharacterCardData(card)) return defaultCharacterCard();
-    return card;
   }
 
   function saveArticleFromForm(withLog = true) {
@@ -1453,7 +1468,7 @@ ${home.introHtml || ''}
       slug: els.articleSlug.value || slugify(els.articleTitle.value || 'article'),
       title: els.articleTitle.value,
       categories: checkedCategories,
-      template: els.articleTemplate?.value === 'character' ? 'character' : 'general',
+      template: isCharacterFormEnabled() ? 'character' : 'general',
       characterCard: collectCharacterCardFromForm(),
       bodyHtml: els.articleBody.value
     };
@@ -1636,7 +1651,7 @@ ${home.introHtml || ''}
 
   function buildCharacterCardHtml(article) {
     const card = { ...defaultCharacterCard(), ...(article.characterCard || {}) };
-    if (!card.enabled || !hasCharacterCardData(card)) return '';
+    if (!card.enabled) return '';
     const imagePath = card.image || article.image || '';
     const imageAlt = card.imageAlt || article.title || '';
     const imageHtml = imagePath ? `<figure class="infobox-image">
@@ -2160,8 +2175,8 @@ ${article.bodyHtml || ''}`.trim();
     { selector: '#article-image', title: 'Image principale', text: 'Chemin de l’image utilisée pour la carte de l’article sur la page d’accueil, par exemple assets/images/vega.webp.' },
     { selector: '#article-image-select', title: 'Choisir une image existante', text: 'Permet de sélectionner une image déjà connue du dépôt sans recopier son chemin manuellement.' },
     { selector: '#article-summary', title: 'Résumé de carte', text: 'Texte court affiché sur la carte de l’article. Il doit donner envie d’ouvrir l’article sans remplacer son contenu.' },
-    { selector: '#article-template', title: 'Type d’article', text: 'Article général correspond à une page classique. Article personnage indique seulement le type éditorial de l’article. La carte se pilote séparément avec la case « Créer une carte personnage ».' },
-    { selector: '#character-card-toggle', title: 'Carte personnage', text: 'Active ou désactive la carte personnage. Quand elle est active, les champs dédiés sont utilisés pour générer automatiquement la carte dans l’article.' },
+    { selector: '#article-template', title: 'Type d’article', text: 'Article général correspond à une page classique. Article personnage indique le type éditorial de l’article. La carte personnage se gère séparément avec la case dédiée.' },
+    { selector: '#character-card-toggle', title: 'Carte personnage', text: 'Active ou désactive réellement la carte personnage. Si la case est décochée puis l’article enregistré et publié, aucune carte personnage n’est générée dans l’article final.' },
     { selector: '#character-card-panel', title: 'Champs de carte personnage', text: 'Ces champs alimentent la carte personnage affichée dans l’article public. Les champs riches acceptent aussi des liens internes ou externes.', mode: 'self' },
     { selector: '#character-image', title: 'Image de la carte', text: 'Image affichée dans la carte personnage. Elle peut être différente de l’image principale utilisée pour la carte d’article.' },
     { selector: '#character-image-select', title: 'Image existante', text: 'Sélectionne une image déjà présente dans le dépôt pour l’utiliser dans la carte personnage.' },
@@ -2396,11 +2411,7 @@ ${article.bodyHtml || ''}`.trim();
       renderArticlePreview();
     });
     els.characterCardToggle?.addEventListener('change', () => {
-      const enabled = Boolean(els.characterCardToggle.checked);
-      if (enabled && els.articleTemplate?.value !== 'character') {
-        els.articleTemplate.value = 'character';
-      }
-      setCharacterCardControls(enabled);
+      syncCharacterControls(els.characterCardToggle.checked);
       renderArticlePreview();
     });
     els.characterImageSelect?.addEventListener('change', () => {

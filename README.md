@@ -196,7 +196,7 @@ Le panneau **Afficher le HTML source de l’article** permet de contrôler le co
 
 Un article personnage est un article général auquel on ajoute une carte de personnage structurée.
 
-Pour créer ce type d’article, sélectionnez **Article personnage** dans le champ **Type d’article**. Cette sélection ne crée pas automatiquement de carte. Pour afficher une carte dans l’article, cochez ensuite **Créer une carte personnage** et renseignez les champs nécessaires.
+Pour créer ce type d’article, sélectionnez **Article personnage** dans le champ **Type d’article**, ou cochez **Créer une carte personnage**.
 
 La zone **Carte de personnage** apparaît alors. Elle permet de renseigner une carte standardisée, cohérente avec le style du site.
 
@@ -350,7 +350,7 @@ Avant de charger le site, renseignez le champ `Nom du chroniqueur`. Ce nom sera 
 
 Au moment du chargement, l’éditeur tente de prendre le verrou. Si le site est libre, l’édition s’ouvre normalement. Si un autre chroniqueur est déjà en train de travailler, un message `Occupé : un chroniqueur est en train de produire` s’affiche et le chargement est bloqué.
 
-Le verrou est renouvelé automatiquement pendant la session. Il expire automatiquement si l’éditeur est fermé brutalement ou si la connexion est interrompue.
+Le verrou est enregistré dans le fichier `.editor-lock.json` sur la branche cible, par exemple `main`. Il est renouvelé automatiquement pendant la session. Il expire automatiquement si l’éditeur est fermé brutalement ou si la connexion est interrompue.
 
 Quand vous avez terminé, cliquez sur `Quitter l’édition` pour libérer le verrou immédiatement.
 

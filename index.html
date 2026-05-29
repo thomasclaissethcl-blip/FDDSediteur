@@ -487,7 +487,7 @@
 <p>Le panneau <strong>Afficher le HTML source de l’article</strong> permet de contrôler le code HTML du corps d’article. Il doit être utilisé avec prudence, car une erreur dans le HTML peut altérer le rendu public.</p>
 <h3>Créer un article personnage</h3>
 <p>Un article personnage est un article général auquel on ajoute une carte de personnage structurée.</p>
-<p>Pour créer ce type d’article, sélectionnez <strong>Article personnage</strong> dans le champ <strong>Type d’article</strong>. Cette sélection ne crée pas automatiquement de carte. Pour afficher une carte dans l’article, cochez ensuite <strong>Créer une carte personnage</strong> et renseignez les champs nécessaires.</p>
+<p>Pour créer ce type d’article, sélectionnez <strong>Article personnage</strong> dans le champ <strong>Type d’article</strong>, ou cochez <strong>Créer une carte personnage</strong>.</p>
 <p>La zone <strong>Carte de personnage</strong> apparaît alors. Elle permet de renseigner une carte standardisée, cohérente avec le style du site.</p>
 <p>La carte de personnage comprend :</p>
 <ul>
@@ -571,7 +571,7 @@ assets/images/</code></pre>
 <p>L’éditeur intègre un verrou éditorial pour éviter que deux chroniqueurs modifient le site en même temps.</p>
 <p>Avant de charger le site, renseignez le champ <strong>Nom du chroniqueur</strong>. Ce nom sera affiché à l’autre utilisateur si le site est déjà occupé.</p>
 <p>Au moment du chargement, l’éditeur tente de prendre le verrou. Si le site est libre, l’édition s’ouvre normalement. Si un autre chroniqueur est déjà en train de travailler, un message <strong>Occupé : un chroniqueur est en train de produire</strong> s’affiche et le chargement est bloqué.</p>
-<p>Le verrou est renouvelé automatiquement pendant la session. Il expire automatiquement si l’éditeur est fermé brutalement ou si la connexion est interrompue.</p>
+<p>Le verrou est enregistré dans le fichier <code>.editor-lock.json</code> sur la branche cible, par exemple <code>main</code>. Il est renouvelé automatiquement pendant la session. Il expire automatiquement si l’éditeur est fermé brutalement ou si la connexion est interrompue.</p>
 <p>Quand vous avez terminé, cliquez sur <strong>Quitter l’édition</strong> pour libérer le verrou immédiatement.</p>
 <p>Le bouton <strong>Forcer la reprise du verrou</strong> est réservé aux cas exceptionnels, par exemple si un verrou est resté bloqué alors que personne ne travaille réellement dans l’éditeur.</p>
       </div>
