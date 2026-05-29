@@ -1,4 +1,4 @@
-# FDDS Editor Webapp v0.4
+# FDDS Editor Webapp v0.5
 
 Éditeur web séparé du site public. Il se connecte au dépôt GitHub du site, lit les contenus structurés du dossier `content/`, permet de les modifier, puis republie le site généré en un seul commit.
 
@@ -47,3 +47,11 @@
 ```
 
 Le site public continue d’être généré dans `pages/`, `data/` et `index.html`.
+
+
+## Correctifs v0.5
+
+- Les champs de carte personnage apparaissent dès que le type « Article personnage » est sélectionné.
+- Une case « Créer une carte personnage » permet d’activer explicitement la carte.
+- Les articles de catégorie « Personnage » affichent automatiquement les champs spécifiques au chargement.
+- Les anciennes cartes personnage présentes dans le HTML sont extraites vers les champs structurés.

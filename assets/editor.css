@@ -48,6 +48,9 @@ input, textarea, select {
 textarea { resize: vertical; }
 label { display: grid; gap: .35rem; font-weight: 700; color: var(--text); }
 label input, label textarea, label select { font-weight: 400; }
+.check-line { display: flex; align-items: center; gap: .6rem; font-weight: 700; border: 1px solid var(--border); border-radius: 12px; padding: .75rem .85rem; background: #fff; }
+.check-line input { width: auto; min-height: auto; }
+.character-card-toggle-line { align-self: end; }
 code { font-family: var(--mono); background: #efe4d5; border-radius: 6px; padding: .08rem .28rem; }
 .app-header {
   padding: 2rem clamp(1rem, 4vw, 3rem);

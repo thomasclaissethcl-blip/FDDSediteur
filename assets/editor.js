@@ -48,6 +48,7 @@
     articleImageSelect: $('#article-image-select'),
     articleSummary: $('#article-summary'),
     articleTemplate: $('#article-template'),
+    characterCardToggle: $('#character-card-toggle'),
     characterPanel: $('#character-card-panel'),
     characterImage: $('#character-image'),
     characterImageSelect: $('#character-image-select'),
@@ -643,30 +644,45 @@
     return result;
   }
 
+  function hasCharacterCardData(card) {
+    if (!card || typeof card !== 'object') return false;
+    return ['image', 'imageAlt', 'caption', 'type', 'activity', 'entourage', 'enemyOf', 'firstAppearance', 'status']
+      .some((key) => stripHTML(String(card[key] || '')).trim());
+  }
+
+  function isCharacterArticle(article) {
+    if (!article) return false;
+    const categories = Array.isArray(article.categories) ? article.categories : [];
+    return article.template === 'character'
+      || article.type === 'character'
+      || article.characterCard?.enabled
+      || hasCharacterCardData(article.characterCard)
+      || categories.includes('Personnage');
+  }
+
   function normalizeCharacterCard(card, bodyHtml = '', categories = []) {
     const extracted = extractCharacterCardFromBody(bodyHtml);
-    const source = card && typeof card === 'object' ? card : extracted.card;
+    const inputCard = card && typeof card === 'object' ? card : {};
+    const merged = { ...defaultCharacterCard(), ...extracted.card, ...inputCard };
     const hasPersonCategory = categories.includes('Personnage');
-    return {
-      ...defaultCharacterCard(),
-      ...source,
-      enabled: Boolean(source.enabled || extracted.found || hasPersonCategory && extracted.found)
-    };
+    merged.enabled = Boolean(inputCard.enabled || extracted.found || hasPersonCategory || hasCharacterCardData(merged));
+    return merged;
   }
 
   function normalizeArticle(article) {
     const categories = Array.isArray(article.categories) ? article.categories : [];
     const extracted = extractCharacterCardFromBody(article.bodyHtml || '');
-    const template = article.template || article.type || (article.characterCard?.enabled || extracted.found ? 'character' : 'general');
+    const characterCard = normalizeCharacterCard(article.characterCard, article.bodyHtml || '', categories);
+    const template = article.template || article.type || (characterCard.enabled ? 'character' : 'general');
     return {
       slug: article.slug || slugify(article.title),
       title: article.title || 'Nouvel article',
       summary: article.summary || '',
-      image: article.image || '',
+      image: article.image || characterCard.image || '',
       categories,
-      template,
-      characterCard: normalizeCharacterCard(article.characterCard, article.bodyHtml || '', categories),
-      bodyHtml: extracted.found && !article.characterCard ? extracted.bodyHtml : (article.bodyHtml || '')
+      template: template === 'character' || characterCard.enabled ? 'character' : 'general',
+      characterCard,
+      bodyHtml: extracted.found ? extracted.bodyHtml : (article.bodyHtml || '')
     };
   }
 
@@ -737,6 +753,12 @@
       label.className = 'checkbox-pill';
       const checked = article?.categories?.includes(category.label) ? 'checked' : '';
       label.innerHTML = `<input type="checkbox" value="${escapeHTML(category.label)}" ${checked}> ${escapeHTML(category.label)}`;
+      const input = label.querySelector('input');
+      input.addEventListener('change', () => {
+        const selectedCategories = collectArticleCategories();
+        if (selectedCategories.includes('Personnage')) syncCharacterControls(true);
+        renderArticlePreview();
+      });
       els.articleCategories.appendChild(label);
     });
   }
@@ -750,6 +772,7 @@
       if (els.articleImageSelect) els.articleImageSelect.value = '';
       els.articleSummary.value = '';
       if (els.articleTemplate) els.articleTemplate.value = 'general';
+      if (els.characterCardToggle) els.characterCardToggle.checked = false;
       setCharacterPanelVisible(false);
       renderCharacterCardFields(null);
       setRichHTML(els.articleBody, els.articleRichEditor, '');
@@ -775,7 +798,9 @@
   }
 
   function setCharacterPanelVisible(visible) {
-    if (els.characterPanel) els.characterPanel.hidden = !visible;
+    if (!els.characterPanel) return;
+    els.characterPanel.hidden = !visible;
+    els.characterPanel.classList.toggle('is-visible', Boolean(visible));
   }
 
   function setMiniHTML(element, html) {
@@ -786,10 +811,19 @@
     return element?.innerHTML?.trim() || '';
   }
 
+  function isCharacterFormEnabled() {
+    return els.articleTemplate?.value === 'character' || Boolean(els.characterCardToggle?.checked);
+  }
+
+  function syncCharacterControls(enabled) {
+    if (els.articleTemplate) els.articleTemplate.value = enabled ? 'character' : 'general';
+    if (els.characterCardToggle) els.characterCardToggle.checked = Boolean(enabled);
+    setCharacterPanelVisible(enabled);
+  }
+
   function renderCharacterCardFields(article) {
-    const isCharacter = (article?.template || '') === 'character' || Boolean(article?.characterCard?.enabled);
-    if (els.articleTemplate) els.articleTemplate.value = isCharacter ? 'character' : 'general';
-    setCharacterPanelVisible(isCharacter);
+    const isCharacter = isCharacterArticle(article);
+    syncCharacterControls(isCharacter);
     const card = { ...defaultCharacterCard(), ...(article?.characterCard || {}) };
     if (els.characterImage) els.characterImage.value = card.image || article?.image || '';
     if (els.characterImageSelect) els.characterImageSelect.value = card.image || article?.image || '';
@@ -804,7 +838,7 @@
   }
 
   function collectCharacterCardFromForm() {
-    const enabled = els.articleTemplate?.value === 'character';
+    const enabled = isCharacterFormEnabled();
     return {
       ...defaultCharacterCard(),
       enabled,
@@ -832,9 +866,9 @@
     article.image = els.articleImage.value.trim();
     article.summary = els.articleSummary.value.trim();
     article.categories = collectArticleCategories();
-    article.template = els.articleTemplate?.value || 'general';
+    article.template = isCharacterFormEnabled() ? 'character' : 'general';
     article.characterCard = collectCharacterCardFromForm();
-    if (article.template === 'character' && article.characterCard.image && !article.image) {
+    if (isCharacterFormEnabled() && article.characterCard.image && !article.image) {
       article.image = article.characterCard.image;
       els.articleImage.value = article.image;
     }
@@ -889,7 +923,7 @@
     syncRichToTextarea(els.articleRichEditor, els.articleBody);
     const previewArticle = {
       title: els.articleTitle.value,
-      template: els.articleTemplate?.value || 'general',
+      template: isCharacterFormEnabled() ? 'character' : 'general',
       characterCard: collectCharacterCardFromForm(),
       bodyHtml: els.articleBody.value
     };
@@ -1593,7 +1627,12 @@ ${article.bodyHtml || ''}`.trim();
       .filter(Boolean)
       .forEach((input) => input.addEventListener('input', () => renderArticlePreview()));
     els.articleTemplate?.addEventListener('change', () => {
-      setCharacterPanelVisible(els.articleTemplate.value === 'character');
+      const enabled = els.articleTemplate.value === 'character';
+      syncCharacterControls(enabled);
+      renderArticlePreview();
+    });
+    els.characterCardToggle?.addEventListener('change', () => {
+      syncCharacterControls(els.characterCardToggle.checked);
       renderArticlePreview();
     });
     els.characterImageSelect?.addEventListener('change', () => {
