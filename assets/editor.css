@@ -409,6 +409,29 @@ fieldset.has-context-help,
   flex: 0 0 auto;
 }
 
+/* Dans la carte personnage, les boutons d'aide restent hors des champs éditables.
+   Ils ne peuvent donc plus intercepter le clic ou le survol destinés à un champ. */
+#character-card-panel label.has-context-help {
+  padding-right: 0;
+}
+
+#character-card-panel label.has-context-help .context-help-trigger-field {
+  position: static;
+  z-index: auto;
+  justify-self: end;
+  margin: -1.65rem 0 .05rem;
+  flex: 0 0 auto;
+}
+
+#character-card-panel label.has-context-help input,
+#character-card-panel label.has-context-help select,
+#character-card-panel label.has-context-help textarea,
+#character-card-panel label.has-context-help .rich-mini,
+#character-card-panel label.has-context-help .rich-editor {
+  position: relative;
+  z-index: 1;
+}
+
 .actions-row .context-help-trigger-inline,
 .list-toolbar .context-help-trigger-inline,
 .rich-toolbar .context-help-trigger-inline,

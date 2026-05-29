@@ -2192,7 +2192,15 @@ ${article.bodyHtml || ''}`.trim();
     host.classList.add('has-context-help');
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = host.matches('button, .button-like') ? 'context-help-trigger context-help-trigger-inline' : 'context-help-trigger';
+
+    const isButtonHost = host.matches('button, .button-like');
+    const isCharacterFieldLabel = host.matches('label') && Boolean(host.closest('#character-card-panel'));
+    button.className = isButtonHost
+      ? 'context-help-trigger context-help-trigger-inline'
+      : isCharacterFieldLabel
+        ? 'context-help-trigger context-help-trigger-field'
+        : 'context-help-trigger';
+
     button.setAttribute('aria-label', `Aide : ${item.title}`);
     button.textContent = '?';
     button.addEventListener('click', (event) => {
@@ -2200,11 +2208,23 @@ ${article.bodyHtml || ''}`.trim();
       event.stopPropagation();
       openContextHelp(button, item);
     });
-    if (host.matches('button, .button-like')) {
+
+    if (isButtonHost) {
       host.insertAdjacentElement('afterend', button);
-    } else {
-      host.appendChild(button);
+      return;
     }
+
+    if (isCharacterFieldLabel) {
+      const control = host.querySelector('input, select, textarea, .rich-mini, .rich-editor');
+      if (control) {
+        host.insertBefore(button, control);
+      } else {
+        host.appendChild(button);
+      }
+      return;
+    }
+
+    host.appendChild(button);
   }
 
   function openContextHelp(trigger, item) {
