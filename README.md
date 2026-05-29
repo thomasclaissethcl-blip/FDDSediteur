@@ -1,6 +1,6 @@
-# FDDS Éditeur
+# FDDS Raconte
 
-FDDS Éditeur est une interface web locale conçue pour administrer le site statique **Flash Dog Duke Silver présente…** sans modifier directement les fichiers HTML à la main.
+FDDS Raconte est une interface web locale conçue pour administrer le site statique **Flash Dog Duke Silver présente…** sans modifier directement les fichiers HTML à la main.
 
 L’outil sert de chaîne éditoriale légère. Il se connecte au dépôt GitHub du site, lit les contenus structurés, permet de modifier les articles, les catégories, les images et certains textes de la page d’accueil, puis régénère les fichiers publics du site avant de les publier dans un commit GitHub unique.
 
