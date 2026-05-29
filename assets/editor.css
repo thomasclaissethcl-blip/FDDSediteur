@@ -793,3 +793,44 @@ fieldset.has-context-help,
     width: calc(100vw - 1rem);
   }
 }
+
+/* Correctif 1.7.1 — aides contextuelles de la carte personnage
+   Les icônes d'aide sont placées dans une ligne de libellé dédiée,
+   jamais au-dessus de la zone de saisie. */
+#character-card-panel label.has-context-help {
+  padding-right: 0 !important;
+  display: grid;
+  gap: .35rem;
+}
+
+#character-card-panel .context-help-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  min-width: 0;
+}
+
+#character-card-panel .context-help-label-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#character-card-panel .context-help-label-row .context-help-trigger-field {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  z-index: auto !important;
+  margin: 0 !important;
+  transform: none !important;
+  flex: 0 0 auto;
+}
+
+#character-card-panel label.has-context-help input,
+#character-card-panel label.has-context-help select,
+#character-card-panel label.has-context-help textarea,
+#character-card-panel label.has-context-help .rich-mini,
+#character-card-panel label.has-context-help .rich-editor {
+  position: relative;
+  z-index: auto !important;
+}

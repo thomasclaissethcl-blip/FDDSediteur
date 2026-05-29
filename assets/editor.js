@@ -2186,6 +2186,40 @@ ${article.bodyHtml || ''}`.trim();
     return element.closest('label') || element.closest('fieldset') || element;
   }
 
+  function placeCharacterHelpButton(host, button, item) {
+    const control = host.querySelector('input, select, textarea, .rich-mini, .rich-editor');
+    const row = document.createElement('span');
+    row.className = 'context-help-label-row';
+
+    const labelText = document.createElement('span');
+    labelText.className = 'context-help-label-text';
+
+    if (control) {
+      const nodesBeforeControl = [];
+      for (const node of Array.from(host.childNodes)) {
+        if (node === control) break;
+        if (node === button) continue;
+        nodesBeforeControl.push(node);
+      }
+
+      const text = nodesBeforeControl
+        .map((node) => node.textContent || '')
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      nodesBeforeControl.forEach((node) => node.remove());
+      labelText.textContent = text || item.title;
+      row.append(labelText, button);
+      host.insertBefore(row, control);
+      return;
+    }
+
+    labelText.textContent = item.title;
+    row.append(labelText, button);
+    host.appendChild(row);
+  }
+
   function addHelpButton(host, item) {
     if (!host || host.dataset.helpReady === 'true') return;
     host.dataset.helpReady = 'true';
@@ -2215,12 +2249,7 @@ ${article.bodyHtml || ''}`.trim();
     }
 
     if (isCharacterFieldLabel) {
-      const control = host.querySelector('input, select, textarea, .rich-mini, .rich-editor');
-      if (control) {
-        host.insertBefore(button, control);
-      } else {
-        host.appendChild(button);
-      }
+      placeCharacterHelpButton(host, button, item);
       return;
     }
 
