@@ -2299,14 +2299,37 @@ ${article.bodyHtml || ''}`.trim();
     $('#busy-retry')?.addEventListener('click', () => { closeBusyDialog(); loadSiteFromGithub(); });
     $('#busy-force')?.addEventListener('click', async () => {
       if (!confirm('Forcer la reprise du verrou peut interrompre le travail d’un autre chroniqueur. Continuer ?')) return;
+
+      const forceButton = $('#busy-force');
+      const retryButton = $('#busy-retry');
+      const cancelButton = $('#busy-cancel');
+
+      closeBusyDialog();
+      log('Verrou forcé, tentative de connexion...', 'info');
+      setStatus('Verrou forcé, tentative de connexion...', false);
+
+      if (forceButton) forceButton.disabled = true;
+      if (retryButton) retryButton.disabled = true;
+      if (cancelButton) cancelButton.disabled = true;
+
       try {
+        await new Promise((resolve) => setTimeout(resolve, 900));
         const ok = await acquireEditorLock({ force: true });
         if (ok) {
-          closeBusyDialog();
+          log('Verrou repris. Chargement du site en cours...', 'ok');
+          setStatus('Chargement du site...', true);
           await loadSiteFromGithub({ skipLock: true });
+        } else {
+          log('La reprise du verrou n’a pas abouti. Réessayez dans quelques secondes.', 'error');
+          setStatus('Reprise du verrou impossible', false);
         }
       } catch (error) {
-        log(error.message, 'error');
+        log(`Impossible de forcer la reprise du verrou : ${error.message}`, 'error');
+        setStatus('Reprise du verrou impossible', false);
+      } finally {
+        if (forceButton) forceButton.disabled = false;
+        if (retryButton) retryButton.disabled = false;
+        if (cancelButton) cancelButton.disabled = false;
       }
     });
     els.busyDialog?.addEventListener('click', (event) => { if (event.target === els.busyDialog) closeBusyDialog(); });
