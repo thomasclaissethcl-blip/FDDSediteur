@@ -47,6 +47,9 @@
         <label>Préfixe de dossier, si besoin
           <input id="repo-prefix" autocomplete="off" placeholder="laisser vide si site à la racine" />
         </label>
+        <label>Nom du chroniqueur
+          <input id="editor-name" autocomplete="off" placeholder="ex. Thomas" />
+        </label>
       </div>
       <label>Token GitHub à permissions limitées
         <input id="github-token" type="password" autocomplete="off" placeholder="Le token reste dans ce navigateur" />
@@ -54,8 +57,10 @@
       <div class="actions-row">
         <button type="button" id="save-config">Enregistrer localement</button>
         <button type="button" id="load-github">Charger le site depuis GitHub</button>
+        <button class="secondary" type="button" id="release-lock" disabled>Quitter l’édition</button>
         <button class="danger" type="button" id="forget-config">Effacer la configuration locale</button>
       </div>
+      <p class="lock-status" id="lock-status">Aucun verrou éditorial actif.</p>
       <p class="help-text">L’éditeur lit les fichiers <code>content/</code>, les images et l’arborescence du dépôt. Il n’est pas destiné à être publié dans le site public.</p>
     </section>
 
@@ -562,8 +567,37 @@ assets/images/</code></pre>
 <p>Le site public doit contenir les fichiers nécessaires à GitHub Pages.</p>
 <p>L’éditeur doit uniquement se connecter au dépôt du site, charger ses contenus, générer les fichiers publics, puis publier les changements.</p>
 <p>Cette séparation permet de garder un site public propre, sans interface d’administration exposée aux visiteurs.</p>
+<h3>Utiliser le verrou éditorial</h3>
+<p>L’éditeur intègre un verrou éditorial pour éviter que deux chroniqueurs modifient le site en même temps.</p>
+<p>Avant de charger le site, renseignez le champ <strong>Nom du chroniqueur</strong>. Ce nom sera affiché à l’autre utilisateur si le site est déjà occupé.</p>
+<p>Au moment du chargement, l’éditeur tente de prendre le verrou. Si le site est libre, l’édition s’ouvre normalement. Si un autre chroniqueur est déjà en train de travailler, un message <strong>Occupé : un chroniqueur est en train de produire</strong> s’affiche et le chargement est bloqué.</p>
+<p>Le verrou est renouvelé automatiquement pendant la session. Il expire automatiquement si l’éditeur est fermé brutalement ou si la connexion est interrompue.</p>
+<p>Quand vous avez terminé, cliquez sur <strong>Quitter l’édition</strong> pour libérer le verrou immédiatement.</p>
+<p>Le bouton <strong>Forcer la reprise du verrou</strong> est réservé aux cas exceptionnels, par exemple si un verrou est resté bloqué alors que personne ne travaille réellement dans l’éditeur.</p>
       </div>
     </div>
+  </dialog>
+
+  <dialog class="busy-dialog" id="busy-dialog" aria-labelledby="busy-dialog-title">
+    <form method="dialog" class="busy-dialog-panel">
+      <header class="busy-dialog-header">
+        <div>
+          <p class="section-kicker">Verrou éditorial</p>
+          <h2 id="busy-dialog-title">Occupé</h2>
+        </div>
+        <button type="button" class="busy-dialog-close" id="busy-close" aria-label="Fermer le message">×</button>
+      </header>
+      <div class="busy-dialog-body">
+        <p class="busy-dialog-lead">Un chroniqueur est en train de produire.</p>
+        <p id="busy-lock-details">Le site est actuellement verrouillé par un autre utilisateur.</p>
+        <p class="help-text" id="busy-lock-expiry">Le verrou se libère automatiquement s’il n’est plus renouvelé.</p>
+        <div class="actions-row">
+          <button type="button" id="busy-retry">Réessayer</button>
+          <button type="button" class="danger" id="busy-force">Forcer la reprise du verrou</button>
+          <button type="button" class="secondary" id="busy-cancel">Fermer</button>
+        </div>
+      </div>
+    </form>
   </dialog>
 
   <dialog class="link-dialog" id="link-dialog">

@@ -16,7 +16,18 @@
     selectedCategorySlug: null,
     pendingImages: [],
     siteCss: '',
-    loaded: false
+    loaded: false,
+    lock: {
+      branch: 'fdds-editor-lock',
+      filePath: '.editor-lock.json',
+      sessionId: '',
+      editorName: '',
+      acquired: false,
+      heartbeatTimer: null,
+      heartbeatMs: 120000,
+      ttlMs: 20 * 60 * 1000,
+      lastRemote: null
+    }
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -29,7 +40,13 @@
     repo: $('#repo-name'),
     branch: $('#repo-branch'),
     prefix: $('#repo-prefix'),
+    editorName: $('#editor-name'),
     token: $('#github-token'),
+    releaseLock: $('#release-lock'),
+    lockStatus: $('#lock-status'),
+    busyDialog: $('#busy-dialog'),
+    busyDetails: $('#busy-lock-details'),
+    busyExpiry: $('#busy-lock-expiry'),
     treeView: $('#tree-view'),
     log: $('#log-output'),
     homeCategoriesTitle: $('#home-categories-title'),
@@ -297,6 +314,7 @@
       repo: els.repo.value.trim(),
       branch: els.branch.value.trim() || 'main',
       prefix: normalizePrefix(els.prefix.value),
+      editorName: els.editorName?.value.trim() || '',
       token: els.token.value.trim()
     };
   }
@@ -306,6 +324,7 @@
     els.repo.value = config.repo || '';
     els.branch.value = config.branch || 'main';
     els.prefix.value = config.prefix || '';
+    if (els.editorName) els.editorName.value = config.editorName || '';
     els.token.value = config.token || '';
   }
 
@@ -337,6 +356,9 @@
     if (!state.config.owner || !state.config.repo || !state.config.branch || !state.config.token) {
       throw new Error('Renseignez propriétaire, dépôt, branche et token GitHub.');
     }
+    if (!state.config.editorName) {
+      throw new Error('Renseignez le nom du chroniqueur avant de charger le site.');
+    }
   }
 
   function apiUrl(path) {
@@ -357,6 +379,292 @@
     }
     if (response.status === 204) return null;
     return response.json();
+  }
+
+  async function githubFetchOptional(path, options = {}) {
+    try {
+      return await githubFetch(path, options);
+    } catch (error) {
+      if (String(error.message || '').includes('GitHub 404')) return null;
+      throw error;
+    }
+  }
+
+
+  function getOrCreateSessionId() {
+    const key = 'fdds-editor-session-id';
+    let value = localStorage.getItem(key);
+    if (!value) {
+      value = (crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      localStorage.setItem(key, value);
+    }
+    state.lock.sessionId = value;
+    return value;
+  }
+
+  function initLockIdentity() {
+    readConfigFromForm();
+    state.lock.editorName = state.config.editorName || 'Chroniqueur anonyme';
+    getOrCreateSessionId();
+  }
+
+  function getLockBranchName() {
+    return state.lock.branch;
+  }
+
+  function getLockFilePath() {
+    return state.lock.filePath;
+  }
+
+  function getLockExpiryDate() {
+    return new Date(Date.now() + state.lock.ttlMs);
+  }
+
+  function isLockActive(lock) {
+    if (!lock || lock.locked !== true) return false;
+    const expires = Date.parse(lock.expiresAt || '');
+    return Number.isFinite(expires) && expires > Date.now();
+  }
+
+  function isOwnLock(lock) {
+    return Boolean(lock && lock.sessionId && lock.sessionId === state.lock.sessionId);
+  }
+
+  function formatLockDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'date inconnue';
+    return date.toLocaleString('fr-FR');
+  }
+
+  function lockDisplayName(lock) {
+    return lock?.editorName || 'un autre chroniqueur';
+  }
+
+  function renderLockStatus(text, ok = state.lock.acquired) {
+    if (!els.lockStatus) return;
+    if (text) {
+      els.lockStatus.textContent = text;
+    } else if (state.lock.acquired) {
+      const expires = state.lock.lastRemote?.expiresAt ? ` jusqu’à ${formatLockDate(state.lock.lastRemote.expiresAt)}` : '';
+      els.lockStatus.textContent = `Verrou éditorial détenu par ${state.lock.editorName}${expires}.`;
+    } else {
+      els.lockStatus.textContent = 'Aucun verrou éditorial actif.';
+    }
+    els.lockStatus.classList.toggle('is-ok', Boolean(ok));
+    els.lockStatus.classList.toggle('is-busy', !ok && Boolean(text));
+    if (els.releaseLock) els.releaseLock.disabled = !state.lock.acquired;
+  }
+
+  async function getGitRef(branch) {
+    return githubFetch(`/git/ref/heads/${encodeURIComponent(branch).replace(/%2F/g, '/')}`);
+  }
+
+  async function getGitRefOptional(branch) {
+    return githubFetchOptional(`/git/ref/heads/${encodeURIComponent(branch).replace(/%2F/g, '/')}`);
+  }
+
+  async function createGitRef(branch, commitSha) {
+    return githubFetch('/git/refs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitSha })
+    });
+  }
+
+  async function updateGitRef(branch, commitSha, force = false) {
+    return githubFetch(`/git/refs/heads/${encodeURIComponent(branch).replace(/%2F/g, '/')}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sha: commitSha, force })
+    });
+  }
+
+  async function getTextFileFromRef(path, ref) {
+    const fullPath = repoPath(path);
+    const data = await githubFetchOptional(`/contents/${encodeURIComponent(fullPath).replace(/%2F/g, '/')}?ref=${encodeURIComponent(ref)}`);
+    if (!data || Array.isArray(data) || data.type !== 'file') return null;
+    return base64ToUtf8(data.content);
+  }
+
+  async function readEditorLock() {
+    const branch = getLockBranchName();
+    const ref = await getGitRefOptional(branch);
+    if (!ref?.object?.sha) return null;
+    const text = await getTextFileFromRef(getLockFilePath(), branch);
+    if (!text) return { refSha: ref.object.sha, data: null };
+    try {
+      return { refSha: ref.object.sha, data: JSON.parse(text) };
+    } catch (_) {
+      return { refSha: ref.object.sha, data: null };
+    }
+  }
+
+  function buildLockData(previous = {}, locked = true) {
+    const now = new Date();
+    const expiresAt = locked ? getLockExpiryDate() : now;
+    return {
+      locked,
+      message: locked ? 'Un chroniqueur est en train de produire.' : 'Verrou éditorial libéré.',
+      editorName: state.lock.editorName || state.config.editorName || 'Chroniqueur anonyme',
+      sessionId: state.lock.sessionId,
+      repository: `${state.config.owner}/${state.config.repo}`,
+      branch: state.config.branch,
+      prefix: normalizePrefix(state.config.prefix),
+      createdAt: previous.createdAt || now.toISOString(),
+      updatedAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      releasedAt: locked ? null : now.toISOString()
+    };
+  }
+
+  async function commitLockData(lockData, createBranch = false) {
+    const lockBranch = getLockBranchName();
+    const parentRef = createBranch ? await getGitRef(state.config.branch) : await getGitRef(lockBranch);
+    const parentSha = parentRef.object?.sha;
+    if (!parentSha) throw new Error('Impossible de déterminer le commit de référence du verrou.');
+    const parentCommit = await getGitCommit(parentSha);
+    const baseTreeSha = parentCommit.tree?.sha;
+    if (!baseTreeSha) throw new Error('Impossible de déterminer l’arbre Git du verrou.');
+
+    const newTree = await createGitTree(baseTreeSha, [{
+      path: repoPath(getLockFilePath()),
+      mode: '100644',
+      type: 'blob',
+      content: `${JSON.stringify(lockData, null, 2)}\n`
+    }]);
+    const newCommit = await createGitCommit(`Verrou éditorial FDDS — ${lockData.locked ? 'prise' : 'libération'} — ${lockData.editorName}`, newTree.sha, parentSha);
+
+    if (createBranch) await createGitRef(lockBranch, newCommit.sha);
+    else await updateGitRef(lockBranch, newCommit.sha, false);
+    state.lock.lastRemote = lockData;
+    return newCommit;
+  }
+
+  function showBusyDialog(lock) {
+    const editor = lockDisplayName(lock);
+    const expires = lock?.expiresAt ? `Expiration automatique prévue : ${formatLockDate(lock.expiresAt)}.` : 'Expiration automatique non déterminée.';
+    if (els.busyDetails) els.busyDetails.textContent = `Le site est actuellement verrouillé par ${editor}.`;
+    if (els.busyExpiry) els.busyExpiry.textContent = expires;
+    if (els.busyDialog?.showModal) els.busyDialog.showModal();
+    else els.busyDialog?.setAttribute('open', '');
+  }
+
+  function closeBusyDialog() {
+    els.busyDialog?.close?.();
+    els.busyDialog?.removeAttribute?.('open');
+  }
+
+  function stopLockHeartbeat() {
+    if (state.lock.heartbeatTimer) {
+      clearInterval(state.lock.heartbeatTimer);
+      state.lock.heartbeatTimer = null;
+    }
+  }
+
+  function startLockHeartbeat() {
+    stopLockHeartbeat();
+    state.lock.heartbeatTimer = setInterval(() => {
+      renewEditorLock().catch((error) => log(`Renouvellement du verrou impossible : ${error.message}`, 'error'));
+    }, state.lock.heartbeatMs);
+  }
+
+  async function acquireEditorLock({ force = false } = {}) {
+    initLockIdentity();
+    const remote = await readEditorLock();
+    const remoteLock = remote?.data;
+    const activeOtherLock = isLockActive(remoteLock) && !isOwnLock(remoteLock);
+
+    if (activeOtherLock && !force) {
+      state.lock.acquired = false;
+      state.lock.lastRemote = remoteLock;
+      stopLockHeartbeat();
+      renderLockStatus(`Site occupé par ${lockDisplayName(remoteLock)}.`, false);
+      showBusyDialog(remoteLock);
+      return false;
+    }
+
+    const nextLock = buildLockData(isOwnLock(remoteLock) ? remoteLock : {}, true);
+    try {
+      await commitLockData(nextLock, !remote?.refSha);
+    } catch (error) {
+      if (String(error.message || '').includes('GitHub 409') || String(error.message || '').includes('GitHub 422')) {
+        const latest = await readEditorLock();
+        if (latest?.data && isLockActive(latest.data) && !isOwnLock(latest.data) && !force) {
+          state.lock.acquired = false;
+          state.lock.lastRemote = latest.data;
+          renderLockStatus(`Site occupé par ${lockDisplayName(latest.data)}.`, false);
+          showBusyDialog(latest.data);
+          return false;
+        }
+      }
+      throw error;
+    }
+
+    state.lock.acquired = true;
+    state.lock.lastRemote = nextLock;
+    startLockHeartbeat();
+    renderLockStatus();
+    log(`Verrou éditorial obtenu pour ${state.lock.editorName}.`, 'ok');
+    return true;
+  }
+
+  async function renewEditorLock() {
+    if (!state.lock.acquired) return false;
+    const remote = await readEditorLock();
+    const remoteLock = remote?.data;
+    if (remoteLock && isLockActive(remoteLock) && !isOwnLock(remoteLock)) {
+      state.lock.acquired = false;
+      state.lock.lastRemote = remoteLock;
+      stopLockHeartbeat();
+      renderLockStatus(`Verrou perdu : le site est occupé par ${lockDisplayName(remoteLock)}.`, false);
+      showBusyDialog(remoteLock);
+      return false;
+    }
+    const nextLock = buildLockData(isOwnLock(remoteLock) ? remoteLock : {}, true);
+    await commitLockData(nextLock, !remote?.refSha);
+    state.lock.acquired = true;
+    state.lock.lastRemote = nextLock;
+    renderLockStatus();
+    return true;
+  }
+
+  async function ensureOwnEditorLock() {
+    if (!state.lock.acquired) return acquireEditorLock();
+    const remote = await readEditorLock();
+    const remoteLock = remote?.data;
+    if (remoteLock && isLockActive(remoteLock) && !isOwnLock(remoteLock)) {
+      state.lock.acquired = false;
+      stopLockHeartbeat();
+      renderLockStatus(`Site occupé par ${lockDisplayName(remoteLock)}.`, false);
+      showBusyDialog(remoteLock);
+      return false;
+    }
+    if (!remoteLock || !isLockActive(remoteLock)) {
+      return acquireEditorLock();
+    }
+    return true;
+  }
+
+  async function releaseEditorLock({ silent = false } = {}) {
+    if (!state.lock.acquired) {
+      renderLockStatus();
+      return;
+    }
+    try {
+      const remote = await readEditorLock();
+      const remoteLock = remote?.data;
+      if (remote?.refSha && (!remoteLock || isOwnLock(remoteLock))) {
+        const releasedLock = buildLockData(remoteLock || {}, false);
+        await commitLockData(releasedLock, false);
+      }
+      state.lock.acquired = false;
+      state.lock.lastRemote = null;
+      stopLockHeartbeat();
+      renderLockStatus('Verrou éditorial libéré.', false);
+      if (!silent) log('Verrou éditorial libéré.', 'ok');
+    } catch (error) {
+      if (!silent) log(`Impossible de libérer le verrou : ${error.message}`, 'error');
+    }
   }
 
   async function getContent(path) {
@@ -515,7 +823,7 @@ ${home.introHtml || ''}
 
 
   async function getBranchRef() {
-    return githubFetch(`/git/ref/heads/${encodeURIComponent(state.config.branch).replace(/%2F/g, '/')}`);
+    return getGitRef(state.config.branch);
   }
 
   async function getGitCommit(commitSha) {
@@ -551,11 +859,7 @@ ${home.introHtml || ''}
   }
 
   async function updateBranchRef(commitSha) {
-    return githubFetch(`/git/refs/heads/${encodeURIComponent(state.config.branch).replace(/%2F/g, '/')}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sha: commitSha, force: false })
-    });
+    return updateGitRef(state.config.branch, commitSha, false);
   }
 
   async function commitFilesInOneBatch({ files, images, deletedPaths, message }) {
@@ -636,11 +940,18 @@ ${home.introHtml || ''}
       .join('\n');
   }
 
-  async function loadSiteFromGithub() {
+  async function loadSiteFromGithub(options = {}) {
     try {
       assertConfig();
       setStatus('Chargement en cours', false);
       log('Chargement du site depuis GitHub...');
+      if (!options.skipLock) {
+        const hasLock = await acquireEditorLock();
+        if (!hasLock) {
+          setStatus('Site occupé', false);
+          return;
+        }
+      }
       state.shas.clear();
       await loadTree();
 
@@ -1453,6 +1764,8 @@ ${article.bodyHtml || ''}`.trim();
 
     try {
       assertConfig();
+      const hasLock = await ensureOwnEditorLock();
+      if (!hasLock) return;
       const build = buildSiteFiles();
       const now = new Date().toISOString();
       const message = `Mise à jour éditoriale FDDS Editor — ${now}`;
@@ -1470,8 +1783,8 @@ ${article.bodyHtml || ''}`.trim();
       });
 
       state.pendingImages = [];
-      await loadSiteFromGithub();
-      log('Publication terminée.', 'ok');
+      await loadSiteFromGithub({ skipLock: true });
+      log('Publication terminée. Le verrou reste actif tant que vous ne quittez pas l’édition.', 'ok');
     } catch (error) {
       if (String(error.message || '').includes('GitHub 409')) {
         log('Conflit GitHub 409 : la branche a changé pendant la publication. Rechargez le site dans l’éditeur, puis relancez la publication.', 'error');
@@ -1721,9 +2034,11 @@ ${article.bodyHtml || ''}`.trim();
     { selector: '#repo-branch', title: 'Branche de publication', text: 'Indiquez la branche que l’éditeur doit lire et modifier. Dans la plupart des cas, il s’agit de main.' },
     { selector: '#repo-prefix', title: 'Préfixe de dossier', text: 'Laissez ce champ vide si le site est à la racine du dépôt. Renseignez-le uniquement si les fichiers du site sont rangés dans un sous-dossier.' },
     { selector: '#github-token', title: 'Token GitHub', text: 'Collez ici un token GitHub limité au dépôt du site. Il sert à lire les contenus, créer un commit et publier les modifications.' },
+    { selector: '#editor-name', title: 'Nom du chroniqueur', text: 'Indiquez le nom affiché dans le verrou éditorial. Si un autre utilisateur ouvre l’éditeur, il verra que le site est occupé par ce chroniqueur.' },
     { selector: '#save-config', title: 'Enregistrer localement', text: 'Enregistre les informations de connexion dans ce navigateur pour éviter de les ressaisir à chaque ouverture.' },
     { selector: '#load-github', title: 'Charger depuis GitHub', text: 'Récupère les fichiers du site depuis le dépôt GitHub : contenus, catégories, articles, images et arborescence.' },
     { selector: '#forget-config', title: 'Effacer la configuration', text: 'Supprime de ce navigateur les informations de connexion enregistrées localement.' },
+    { selector: '#release-lock', title: 'Quitter l’édition', text: 'Libère le verrou éditorial afin qu’un autre chroniqueur puisse charger le site dans son éditeur.' },
     { selector: '#refresh-tree', title: 'Rafraîchir l’arborescence', text: 'Recharge la liste des fichiers présents dans la branche GitHub sélectionnée.' },
 
     { selector: '#home-categories-title', title: 'Titre des catégories', text: 'Titre affiché au-dessus des filtres de catégories sur la page d’accueil du site public.' },
@@ -1915,7 +2230,25 @@ ${article.bodyHtml || ''}`.trim();
     $('#save-config').addEventListener('click', saveConfig);
     $('#load-saved-config').addEventListener('click', loadSavedConfig);
     $('#forget-config').addEventListener('click', forgetConfig);
-    $('#load-github').addEventListener('click', loadSiteFromGithub);
+    $('#load-github').addEventListener('click', () => loadSiteFromGithub());
+    els.releaseLock?.addEventListener('click', () => releaseEditorLock());
+    $('#busy-close')?.addEventListener('click', closeBusyDialog);
+    $('#busy-cancel')?.addEventListener('click', closeBusyDialog);
+    $('#busy-retry')?.addEventListener('click', () => { closeBusyDialog(); loadSiteFromGithub(); });
+    $('#busy-force')?.addEventListener('click', async () => {
+      if (!confirm('Forcer la reprise du verrou peut interrompre le travail d’un autre chroniqueur. Continuer ?')) return;
+      try {
+        const ok = await acquireEditorLock({ force: true });
+        if (ok) {
+          closeBusyDialog();
+          await loadSiteFromGithub({ skipLock: true });
+        }
+      } catch (error) {
+        log(error.message, 'error');
+      }
+    });
+    els.busyDialog?.addEventListener('click', (event) => { if (event.target === els.busyDialog) closeBusyDialog(); });
+    window.addEventListener('beforeunload', () => { stopLockHeartbeat(); });
     $('#refresh-tree').addEventListener('click', async () => {
       try { assertConfig(); await loadTree(); log('Arborescence rafraîchie.', 'ok'); } catch (error) { log(error.message, 'error'); }
     });

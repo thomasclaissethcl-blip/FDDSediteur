@@ -341,3 +341,18 @@ Le site public doit contenir les fichiers nécessaires à GitHub Pages.
 L’éditeur doit uniquement se connecter au dépôt du site, charger ses contenus, générer les fichiers publics, puis publier les changements.
 
 Cette séparation permet de garder un site public propre, sans interface d’administration exposée aux visiteurs.
+
+## Verrou éditorial
+
+L’éditeur intègre un verrou éditorial pour éviter que deux chroniqueurs modifient le site en même temps.
+
+Avant de charger le site, renseignez le champ `Nom du chroniqueur`. Ce nom sera affiché à l’autre utilisateur si le site est déjà occupé.
+
+Au moment du chargement, l’éditeur tente de prendre le verrou. Si le site est libre, l’édition s’ouvre normalement. Si un autre chroniqueur est déjà en train de travailler, un message `Occupé : un chroniqueur est en train de produire` s’affiche et le chargement est bloqué.
+
+Le verrou est renouvelé automatiquement pendant la session. Il expire automatiquement si l’éditeur est fermé brutalement ou si la connexion est interrompue.
+
+Quand vous avez terminé, cliquez sur `Quitter l’édition` pour libérer le verrou immédiatement.
+
+Le bouton `Forcer la reprise du verrou` est réservé aux cas exceptionnels, par exemple si un verrou est resté bloqué alors que personne ne travaille réellement dans l’éditeur.
+
