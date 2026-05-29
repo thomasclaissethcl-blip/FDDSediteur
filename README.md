@@ -55,3 +55,7 @@ Le site public continue d’être généré dans `pages/`, `data/` et `index.htm
 - Une case « Créer une carte personnage » permet d’activer explicitement la carte.
 - Les articles de catégorie « Personnage » affichent automatiquement les champs spécifiques au chargement.
 - Les anciennes cartes personnage présentes dans le HTML sont extraites vers les champs structurés.
+
+## Aides contextuelles
+
+Cette version ajoute des aides contextuelles dans l’interface. Les champs et actions principales disposent d’un bouton `?`. Un clic ouvre une bulle d’aide superposée à l’interface. La bulle se ferme avec la croix, avec la touche Échap, ou en cliquant ailleurs dans la page.

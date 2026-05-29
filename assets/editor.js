@@ -1600,6 +1600,173 @@ ${article.bodyHtml || ''}`.trim();
     $$('.rich-format').forEach((select) => select.addEventListener('change', () => applyRichFormat(select)));
   }
 
+
+  const CONTEXT_HELP_ITEMS = [
+    { selector: '#repo-owner', title: 'Propriétaire GitHub', text: 'Indiquez le nom du compte personnel ou de l’organisation qui possède le dépôt du site. C’est la première partie de l’adresse GitHub du dépôt.' },
+    { selector: '#repo-name', title: 'Nom du dépôt', text: 'Indiquez uniquement le nom du dépôt GitHub qui contient le site, sans l’URL complète.' },
+    { selector: '#repo-branch', title: 'Branche de publication', text: 'Indiquez la branche que l’éditeur doit lire et modifier. Dans la plupart des cas, il s’agit de main.' },
+    { selector: '#repo-prefix', title: 'Préfixe de dossier', text: 'Laissez ce champ vide si le site est à la racine du dépôt. Renseignez-le uniquement si les fichiers du site sont rangés dans un sous-dossier.' },
+    { selector: '#github-token', title: 'Token GitHub', text: 'Collez ici un token GitHub limité au dépôt du site. Il sert à lire les contenus, créer un commit et publier les modifications.' },
+    { selector: '#save-config', title: 'Enregistrer localement', text: 'Enregistre les informations de connexion dans ce navigateur pour éviter de les ressaisir à chaque ouverture.' },
+    { selector: '#load-github', title: 'Charger depuis GitHub', text: 'Récupère les fichiers du site depuis le dépôt GitHub : contenus, catégories, articles, images et arborescence.' },
+    { selector: '#forget-config', title: 'Effacer la configuration', text: 'Supprime de ce navigateur les informations de connexion enregistrées localement.' },
+    { selector: '#refresh-tree', title: 'Rafraîchir l’arborescence', text: 'Recharge la liste des fichiers présents dans la branche GitHub sélectionnée.' },
+
+    { selector: '#home-categories-title', title: 'Titre des catégories', text: 'Titre affiché au-dessus des filtres de catégories sur la page d’accueil du site public.' },
+    { selector: '#home-articles-title', title: 'Titre des articles', text: 'Titre affiché au-dessus de la liste des cartes d’articles.' },
+    { selector: '#home-categories-intro', title: 'Introduction des catégories', text: 'Court texte affiché dans la section des catégories. Il sert à expliquer la logique de navigation.' },
+    { selector: '#home-search-label', title: 'Libellé de recherche', text: 'Texte affiché au-dessus du champ de recherche du site public.' },
+    { selector: '#home-search-placeholder', title: 'Placeholder de recherche', text: 'Texte indicatif visible dans le champ de recherche quand celui-ci est vide.' },
+    { selector: '#home-reset-label', title: 'Bouton de réinitialisation', text: 'Libellé du bouton qui vide la recherche et retire le filtre de catégorie actif.' },
+    { selector: '[data-rich-editor="home-rich-editor"]', title: 'Bloc de présentation', text: 'Zone éditable correspondant au texte de présentation de la page d’accueil. Le HTML source reste disponible sous l’éditeur.', mode: 'self' },
+    { selector: '#home-intro-html', title: 'HTML source de la présentation', text: 'Version HTML brute du bloc de présentation. À utiliser pour une correction précise lorsque l’éditeur riche ne suffit pas.' },
+
+    { selector: '#article-title', title: 'Titre de l’article', text: 'Titre principal de l’article. Il est utilisé dans la page, dans la carte d’article et dans les données de recherche.' },
+    { selector: '#article-slug', title: 'Slug de l’article', text: 'Identifiant technique utilisé dans les URL et les noms de fichiers. Il doit rester court, sans espace ni accent.' },
+    { selector: '#article-image', title: 'Image principale', text: 'Chemin de l’image utilisée pour la carte de l’article sur la page d’accueil, par exemple assets/images/vega.webp.' },
+    { selector: '#article-image-select', title: 'Choisir une image existante', text: 'Permet de sélectionner une image déjà connue du dépôt sans recopier son chemin manuellement.' },
+    { selector: '#article-summary', title: 'Résumé de carte', text: 'Texte court affiché sur la carte de l’article. Il doit donner envie d’ouvrir l’article sans remplacer son contenu.' },
+    { selector: '#article-template', title: 'Type d’article', text: 'Article général correspond à une page classique. Article personnage active la logique de carte personnage structurée.' },
+    { selector: '#character-card-toggle', title: 'Carte personnage', text: 'Active ou désactive la carte personnage. Quand elle est active, les champs dédiés sont utilisés pour générer automatiquement la carte dans l’article.' },
+    { selector: '#character-card-panel', title: 'Champs de carte personnage', text: 'Ces champs alimentent la carte personnage affichée dans l’article public. Les champs riches acceptent aussi des liens internes ou externes.', mode: 'self' },
+    { selector: '#character-image', title: 'Image de la carte', text: 'Image affichée dans la carte personnage. Elle peut être différente de l’image principale utilisée pour la carte d’article.' },
+    { selector: '#character-image-select', title: 'Image existante', text: 'Sélectionne une image déjà présente dans le dépôt pour l’utiliser dans la carte personnage.' },
+    { selector: '#character-image-alt', title: 'Texte alternatif', text: 'Texte descriptif de l’image. Il améliore l’accessibilité et sert si l’image ne se charge pas.' },
+    { selector: '#character-caption', title: 'Légende', text: 'Texte affiché sous l’image dans la carte personnage.' },
+    { selector: '#character-type', title: 'Type', text: 'Information libre décrivant la nature du personnage : humain, machine, entité, faction incarnée, etc.' },
+    { selector: '#character-activity', title: 'Activité', text: 'Activité, fonction ou rôle principal du personnage dans l’univers du site.' },
+    { selector: '#character-entourage', title: 'Entourage', text: 'Personnages, groupes ou organisations associés au personnage. Vous pouvez créer des liens dans ce champ.' },
+    { selector: '#character-enemy-of', title: 'Ennemi de', text: 'Personnages, groupes ou concepts avec lesquels le personnage est en opposition.' },
+    { selector: '#character-first-appearance', title: 'Première apparition', text: 'Indiquez la première œuvre, page, épisode ou source où le personnage apparaît.' },
+    { selector: '#character-status', title: 'État', text: 'Statut actuel du personnage : actif, disparu, mort, inconnu, reconstruit, etc.' },
+    { selector: '#character-field-link', title: 'Créer un lien dans la carte', text: 'Sélectionnez du texte dans un champ de carte personnage, puis utilisez ce bouton pour lui appliquer un lien.' },
+    { selector: '#character-field-unlink', title: 'Retirer un lien', text: 'Placez le curseur dans un lien ou sélectionnez le texte concerné, puis utilisez ce bouton pour retirer le lien.' },
+    { selector: '.checkbox-group', title: 'Catégories de l’article', text: 'Les catégories déterminent l’affichage de la carte d’article dans les filtres de la page d’accueil et dans la recherche.', mode: 'self' },
+    { selector: '[data-rich-editor="article-rich-editor"]', title: 'Corps de l’article', text: 'Zone principale de rédaction de l’article. Elle accepte titres, paragraphes, listes, liens et images.', mode: 'self' },
+    { selector: '#article-body', title: 'HTML source de l’article', text: 'Version HTML brute du contenu de l’article. À utiliser seulement pour des corrections précises.' },
+    { selector: '#save-article-local', title: 'Enregistrer en mémoire', text: 'Enregistre l’article dans l’état courant de l’éditeur. La modification n’est envoyée sur GitHub qu’au moment de la publication.' },
+    { selector: '#delete-article-local', title: 'Supprimer en mémoire', text: 'Retire l’article de l’état courant de l’éditeur. La suppression n’est effective sur GitHub qu’après publication.' },
+
+    { selector: '#category-label', title: 'Nom de catégorie', text: 'Nom visible de la catégorie sur le site public et dans l’éditeur.' },
+    { selector: '#category-slug', title: 'Slug de catégorie', text: 'Identifiant technique de la catégorie. Il sert aux filtres, aux routes et aux données du site.' },
+    { selector: '#category-image', title: 'Image de catégorie', text: 'Image affichée sur la carte de catégorie dans la page d’accueil.' },
+    { selector: '#category-image-select', title: 'Choisir une image existante', text: 'Permet d’utiliser une image déjà présente dans le dépôt comme image de catégorie.' },
+    { selector: '#category-description', title: 'Description de catégorie', text: 'Texte court qui explique ce que regroupe la catégorie sur la page d’accueil.' },
+    { selector: '#save-category-local', title: 'Enregistrer en mémoire', text: 'Enregistre la catégorie dans l’état courant de l’éditeur. Elle sera publiée lors du prochain envoi vers GitHub.' },
+    { selector: '#delete-category-local', title: 'Supprimer en mémoire', text: 'Supprime la catégorie de l’état courant. Vérifiez les articles associés avant publication.' },
+
+    { selector: '#image-file', title: 'Fichier image', text: 'Sélectionnez une image locale à ajouter au dépôt. Elle sera placée dans assets/images/ lors de la publication.' },
+    { selector: '#image-target-name', title: 'Nom de fichier cible', text: 'Nom du fichier tel qu’il sera enregistré dans assets/images/. Utilisez un nom court, sans espace, avec une extension adaptée.' },
+    { selector: '#queue-image', title: 'Ajouter à la file', text: 'Prépare l’image pour la prochaine publication GitHub. Tant que vous ne publiez pas, elle reste seulement en attente dans l’éditeur.' },
+
+    { selector: '#download-backup', title: 'Backup JSON', text: 'Télécharge une sauvegarde des contenus éditoriaux structurés : accueil, articles, catégories et index d’images.' },
+    { selector: '#restore-backup', title: 'Restaurer un backup JSON', text: 'Recharge dans l’éditeur une sauvegarde éditoriale JSON. La restauration ne modifie GitHub qu’après publication.' },
+    { selector: '#download-repo-zip', title: 'Backup ZIP complet', text: 'Télécharge une archive complète de la branche chargée du dépôt GitHub.' },
+    { selector: '#restore-repo-zip', title: 'Restaurer un ZIP complet', text: 'Prépare la restauration complète d’une archive ZIP vers GitHub. À utiliser avec prudence, idéalement après test.' },
+    { selector: '#preview-build', title: 'Prévisualiser la génération', text: 'Construit virtuellement les fichiers publics pour vérifier ce qui sera généré avant publication.' },
+    { selector: '#publish-github', title: 'Publier sur GitHub', text: 'Génère les fichiers publics, prépare les contenus structurés et envoie l’ensemble vers GitHub dans un commit unique.' }
+  ];
+
+  function ensureHelpPopover() {
+    let popover = $('#context-help-popover');
+    if (popover) return popover;
+    popover = document.createElement('div');
+    popover.id = 'context-help-popover';
+    popover.className = 'context-help-popover';
+    popover.hidden = true;
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-live', 'polite');
+    popover.innerHTML = `
+      <div class="context-help-head">
+        <strong class="context-help-title"></strong>
+        <button type="button" class="context-help-close" aria-label="Fermer l’aide">×</button>
+      </div>
+      <p class="context-help-text"></p>
+    `;
+    document.body.appendChild(popover);
+    popover.querySelector('.context-help-close').addEventListener('click', closeContextHelp);
+    return popover;
+  }
+
+  function getHelpHost(element, mode) {
+    if (!element) return null;
+    if (mode === 'self') return element;
+    if (element.matches('button, .button-like')) return element;
+    return element.closest('label') || element.closest('fieldset') || element;
+  }
+
+  function addHelpButton(host, item) {
+    if (!host || host.dataset.helpReady === 'true') return;
+    host.dataset.helpReady = 'true';
+    host.classList.add('has-context-help');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = host.matches('button, .button-like') ? 'context-help-trigger context-help-trigger-inline' : 'context-help-trigger';
+    button.setAttribute('aria-label', `Aide : ${item.title}`);
+    button.textContent = '?';
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openContextHelp(button, item);
+    });
+    if (host.matches('button, .button-like')) {
+      host.insertAdjacentElement('afterend', button);
+    } else {
+      host.appendChild(button);
+    }
+  }
+
+  function openContextHelp(trigger, item) {
+    const popover = ensureHelpPopover();
+    popover.querySelector('.context-help-title').textContent = item.title;
+    popover.querySelector('.context-help-text').textContent = item.text;
+    popover.hidden = false;
+    popover.dataset.open = 'true';
+
+    const rect = trigger.getBoundingClientRect();
+    const width = Math.min(380, window.innerWidth - 32);
+    popover.style.width = `${width}px`;
+    popover.style.left = '0px';
+    popover.style.top = '0px';
+
+    const popRect = popover.getBoundingClientRect();
+    const preferredLeft = rect.left + rect.width / 2 - width / 2;
+    const left = Math.max(16, Math.min(preferredLeft, window.innerWidth - width - 16));
+    const below = rect.bottom + 10;
+    const above = rect.top - popRect.height - 10;
+    const top = below + popRect.height <= window.innerHeight - 16 ? below : Math.max(16, above);
+
+    popover.style.left = `${left}px`;
+    popover.style.top = `${top}px`;
+  }
+
+  function closeContextHelp() {
+    const popover = $('#context-help-popover');
+    if (!popover) return;
+    popover.hidden = true;
+    delete popover.dataset.open;
+  }
+
+  function setupContextHelp() {
+    ensureHelpPopover();
+    CONTEXT_HELP_ITEMS.forEach((item) => {
+      const element = document.querySelector(item.selector);
+      const host = getHelpHost(element, item.mode);
+      addHelpButton(host, item);
+    });
+    document.addEventListener('click', (event) => {
+      const popover = $('#context-help-popover');
+      if (!popover || popover.hidden) return;
+      if (event.target.closest('.context-help-popover') || event.target.closest('.context-help-trigger')) return;
+      closeContextHelp();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeContextHelp();
+    });
+    window.addEventListener('resize', closeContextHelp);
+    window.addEventListener('scroll', closeContextHelp, true);
+  }
+
   function switchTab(tabName) {
     $$('.tab').forEach((button) => button.classList.toggle('is-active', button.dataset.tab === tabName));
     $$('.tab-panel').forEach((panel) => panel.classList.toggle('is-active', panel.id === `tab-${tabName}`));
@@ -1664,5 +1831,6 @@ ${article.bodyHtml || ''}`.trim();
 
   setupRichEditors();
   bindEvents();
+  setupContextHelp();
   loadSavedConfig();
 })();
