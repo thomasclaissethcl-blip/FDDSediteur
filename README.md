@@ -1,52 +1,49 @@
-# FDDS Editor Webapp v0.3
+# FDDS Editor Webapp v0.4
 
-Cette webapp est un outil d’édition séparé du site public. Elle se lance localement dans un navigateur, avec Live Server, puis se connecte au dépôt GitHub du site cible.
+Éditeur web séparé du site public. Il se connecte au dépôt GitHub du site, lit les contenus structurés du dossier `content/`, permet de les modifier, puis republie le site généré en un seul commit.
 
-## Prérequis
+## Nouveautés v0.4
 
-Le dépôt GitHub du site doit contenir la structure générée à partir de `fdds_static_site_v3_7` ou d’une version ultérieure compatible :
+- Correction de l’édition du contenu d’article.
+- Séparation plus nette entre article général et article personnage.
+- Extraction automatique des anciennes cartes personnage `aside.infobox` lors du chargement des contenus existants.
+- Ajout d’un template « Article personnage » avec carte structurée : image, type, activité, entourage, ennemi de, première apparition, état.
+- Les champs de la carte acceptent du HTML et des liens.
+- Ajout d’une fenêtre de création de lien : sélectionnez du texte, cliquez sur « Lien » ou « Créer un lien sur la sélection », puis renseignez la cible.
+- La génération conserve le style public existant des cartes personnage.
 
-```text
-content/
-index.html
-pages/
-data/
-assets/
-tools/
+## Test recommandé
+
+1. Ouvrir `index.html` avec Live Server dans VS Code.
+2. Charger le dépôt GitHub de test.
+3. Ouvrir un article de catégorie Personnage, par exemple Vega ou Jacques Homme Doré.
+4. Vérifier que la carte personnage est affichée dans les champs structurés.
+5. Modifier un champ, par exemple « État ».
+6. Modifier un paragraphe dans le corps de l’article.
+7. Prévisualiser la génération.
+8. Publier.
+9. Vérifier le site public.
+
+## Remarque de structure
+
+À partir de cette version, les articles peuvent contenir :
+
+```json
+{
+  "template": "character",
+  "characterCard": {
+    "enabled": true,
+    "image": "assets/images/...",
+    "caption": "...",
+    "type": "...",
+    "activity": "...",
+    "entourage": "...",
+    "enemyOf": "...",
+    "firstAppearance": "...",
+    "status": "..."
+  },
+  "bodyHtml": "<p>Contenu principal de l’article.</p>"
+}
 ```
 
-L’éditeur ne doit pas être ajouté au dépôt du site public. Il reste dans un dossier séparé.
-
-## Utilisation
-
-Ouvrez ce dossier dans VS Code, puis lancez Live Server sur `index.html`.
-
-Renseignez ensuite :
-
-```text
-Owner
-Repository
-Branch
-Préfixe éventuel
-Token GitHub
-```
-
-Le token GitHub doit être limité au dépôt cible et disposer au minimum de la permission `Contents: Read and write`.
-
-## Nouveautés de la v0.3
-
-- Éditeur riche intégré pour la page d’accueil et le corps des articles.
-- Possibilité de basculer vers le HTML source pour les corrections fines.
-- Sélecteur d’images existantes pour les articles et les catégories.
-- Insertion d’images depuis l’éditeur riche.
-- Backup ZIP complet du dépôt chargé.
-- Restauration ZIP complète vers GitHub en un seul commit.
-- Conservation des catégories déclarées même si aucun article ne leur est encore associé.
-
-## Points de prudence
-
-La restauration ZIP remplace l’état du dépôt par le contenu de l’archive sélectionnée. Utilisez cette fonction d’abord sur un dépôt de test.
-
-Le backup JSON reste utile pour sauvegarder rapidement les contenus éditoriaux. Le backup ZIP est plus large : il inclut tous les fichiers visibles dans l’arborescence chargée.
-
-L’éditeur riche utilise les capacités natives du navigateur. Pour des corrections avancées, ouvrez le HTML source sous le bloc d’édition.
+Le site public continue d’être généré dans `pages/`, `data/` et `index.html`.

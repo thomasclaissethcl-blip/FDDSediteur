@@ -47,6 +47,20 @@
     articleImage: $('#article-image'),
     articleImageSelect: $('#article-image-select'),
     articleSummary: $('#article-summary'),
+    articleTemplate: $('#article-template'),
+    characterPanel: $('#character-card-panel'),
+    characterImage: $('#character-image'),
+    characterImageSelect: $('#character-image-select'),
+    characterImageAlt: $('#character-image-alt'),
+    characterCaption: $('#character-caption'),
+    characterType: $('#character-type'),
+    characterActivity: $('#character-activity'),
+    characterEntourage: $('#character-entourage'),
+    characterEnemyOf: $('#character-enemy-of'),
+    characterFirstAppearance: $('#character-first-appearance'),
+    characterStatus: $('#character-status'),
+    characterFieldLink: $('#character-field-link'),
+    characterFieldUnlink: $('#character-field-unlink'),
     articleCategories: $('#article-categories'),
     articleBody: $('#article-body'),
     articleRichEditor: $('#article-rich-editor'),
@@ -61,8 +75,97 @@
     imageFile: $('#image-file'),
     imageTargetName: $('#image-target-name'),
     pendingImages: $('#pending-images'),
-    buildPreview: $('#build-preview')
+    buildPreview: $('#build-preview'),
+    linkDialog: $('#link-dialog'),
+    linkUrl: $('#link-url'),
+    linkTitle: $('#link-title')
   };
+
+  let activeRichEditable = null;
+  let savedRichRange = null;
+
+  function rememberRichSelection() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const container = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+      ? range.commonAncestorContainer
+      : range.commonAncestorContainer.parentElement;
+    const editor = container?.closest?.('.rich-editor, .rich-mini');
+    if (!editor) return;
+    activeRichEditable = editor;
+    savedRichRange = range.cloneRange();
+  }
+
+  function restoreRichSelection() {
+    if (!savedRichRange) return false;
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(savedRichRange);
+    return true;
+  }
+
+  function syncRichContainerAfterChange(editor) {
+    const block = editor?.closest?.('.rich-editor-block');
+    if (block) {
+      const target = document.getElementById(block.dataset.richTarget);
+      syncRichToTextarea(editor, target);
+      if (block.dataset.richTarget === 'article-body') renderArticlePreview();
+      if (block.dataset.richTarget === 'home-intro-html') collectHomeFromForm();
+    }
+    if (editor?.classList?.contains('rich-mini')) {
+      renderArticlePreview();
+    }
+  }
+
+  function openLinkDialog(editor) {
+    if (editor) {
+      activeRichEditable = editor;
+      editor.focus();
+      rememberRichSelection();
+    }
+    if (!activeRichEditable || !savedRichRange) {
+      log('Sélectionnez d’abord le texte à transformer en lien.', 'error');
+      return;
+    }
+    els.linkUrl.value = '';
+    els.linkTitle.value = '';
+    if (els.linkDialog?.showModal) els.linkDialog.showModal();
+    else {
+      const url = prompt('Adresse du lien à insérer :');
+      if (url) applyLink(url, '');
+    }
+  }
+
+  function applyLink(url, title = '') {
+    if (!url || !activeRichEditable || !savedRichRange) return;
+    activeRichEditable.focus();
+    restoreRichSelection();
+    document.execCommand('createLink', false, url);
+    const selection = window.getSelection();
+    const anchor = selection?.anchorNode?.parentElement?.closest?.('a') || activeRichEditable.querySelector(`a[href="${CSS.escape(url)}"]`);
+    if (anchor) {
+      if (title) anchor.setAttribute('title', title);
+      if (/^https?:\/\//i.test(url)) {
+        anchor.classList.add('external-link');
+        anchor.setAttribute('target', '_blank');
+        anchor.setAttribute('rel', 'noopener noreferrer');
+      }
+    }
+    syncRichContainerAfterChange(activeRichEditable);
+  }
+
+  function unlinkSelection(editor) {
+    if (editor) {
+      activeRichEditable = editor;
+      editor.focus();
+      rememberRichSelection();
+    }
+    if (!activeRichEditable) return;
+    restoreRichSelection();
+    document.execCommand('unlink', false, null);
+    syncRichContainerAfterChange(activeRichEditable);
+  }
 
   function log(message, type = 'info') {
     const prefix = type === 'error' ? '[erreur]' : type === 'ok' ? '[ok]' : '[info]';
@@ -480,14 +583,90 @@
       .map((item) => ({ name: item.displayPath.split('/').pop(), path: item.displayPath }));
   }
 
+  const characterFieldDefinitions = [
+    ['type', 'Type'],
+    ['activity', 'Activité'],
+    ['entourage', 'Entourage'],
+    ['enemyOf', 'Ennemi de'],
+    ['firstAppearance', 'Première apparition'],
+    ['status', 'État']
+  ];
+
+  function defaultCharacterCard() {
+    return {
+      enabled: false,
+      image: '',
+      imageAlt: '',
+      caption: '',
+      type: '',
+      activity: '',
+      entourage: '',
+      enemyOf: '',
+      firstAppearance: '',
+      status: ''
+    };
+  }
+
+  function normalizeLabelForCard(label) {
+    return normalizeForSearch(label).replace(/\s+/g, ' ');
+  }
+
+  function extractCharacterCardFromBody(bodyHtml = '') {
+    const result = { card: defaultCharacterCard(), bodyHtml: bodyHtml || '', found: false };
+    if (!bodyHtml || !bodyHtml.includes('infobox')) return result;
+    const template = document.createElement('template');
+    template.innerHTML = bodyHtml;
+    const infobox = template.content.querySelector('aside.infobox');
+    if (!infobox) return result;
+
+    result.found = true;
+    result.card.enabled = true;
+    const img = infobox.querySelector('.infobox-image img, img');
+    const caption = infobox.querySelector('.infobox-caption, figcaption');
+    result.card.image = img?.getAttribute('src') || '';
+    result.card.imageAlt = img?.getAttribute('alt') || '';
+    result.card.caption = caption?.innerHTML?.trim() || '';
+
+    infobox.querySelectorAll('.infobox-row').forEach((row) => {
+      const label = normalizeLabelForCard(row.querySelector('.infobox-label')?.textContent || '');
+      const value = row.querySelector('.infobox-value')?.innerHTML?.trim() || '';
+      if (label === 'type') result.card.type = value;
+      else if (label === 'activite') result.card.activity = value;
+      else if (label === 'entourage') result.card.entourage = value;
+      else if (label === 'ennemi de') result.card.enemyOf = value;
+      else if (label === 'premiere apparition') result.card.firstAppearance = value;
+      else if (label === 'etat') result.card.status = value;
+    });
+
+    infobox.remove();
+    result.bodyHtml = template.innerHTML.trim();
+    return result;
+  }
+
+  function normalizeCharacterCard(card, bodyHtml = '', categories = []) {
+    const extracted = extractCharacterCardFromBody(bodyHtml);
+    const source = card && typeof card === 'object' ? card : extracted.card;
+    const hasPersonCategory = categories.includes('Personnage');
+    return {
+      ...defaultCharacterCard(),
+      ...source,
+      enabled: Boolean(source.enabled || extracted.found || hasPersonCategory && extracted.found)
+    };
+  }
+
   function normalizeArticle(article) {
+    const categories = Array.isArray(article.categories) ? article.categories : [];
+    const extracted = extractCharacterCardFromBody(article.bodyHtml || '');
+    const template = article.template || article.type || (article.characterCard?.enabled || extracted.found ? 'character' : 'general');
     return {
       slug: article.slug || slugify(article.title),
       title: article.title || 'Nouvel article',
       summary: article.summary || '',
       image: article.image || '',
-      categories: Array.isArray(article.categories) ? article.categories : [],
-      bodyHtml: article.bodyHtml || ''
+      categories,
+      template,
+      characterCard: normalizeCharacterCard(article.characterCard, article.bodyHtml || '', categories),
+      bodyHtml: extracted.found && !article.characterCard ? extracted.bodyHtml : (article.bodyHtml || '')
     };
   }
 
@@ -570,6 +749,9 @@
       els.articleImage.value = '';
       if (els.articleImageSelect) els.articleImageSelect.value = '';
       els.articleSummary.value = '';
+      if (els.articleTemplate) els.articleTemplate.value = 'general';
+      setCharacterPanelVisible(false);
+      renderCharacterCardFields(null);
       setRichHTML(els.articleBody, els.articleRichEditor, '');
       els.articleCategories.innerHTML = '';
       els.articlePreview.innerHTML = '';
@@ -580,6 +762,7 @@
     els.articleImage.value = article.image || '';
     if (els.articleImageSelect) els.articleImageSelect.value = article.image || '';
     els.articleSummary.value = article.summary || '';
+    renderCharacterCardFields(article);
     setRichHTML(els.articleBody, els.articleRichEditor, article.bodyHtml || '');
     renderCategoryCheckboxes(article);
     renderArticlePreview();
@@ -589,6 +772,52 @@
     return $$('#article-categories input[type="checkbox"]')
       .filter((input) => input.checked)
       .map((input) => input.value);
+  }
+
+  function setCharacterPanelVisible(visible) {
+    if (els.characterPanel) els.characterPanel.hidden = !visible;
+  }
+
+  function setMiniHTML(element, html) {
+    if (element && element.innerHTML !== (html || '')) element.innerHTML = html || '';
+  }
+
+  function getMiniHTML(element) {
+    return element?.innerHTML?.trim() || '';
+  }
+
+  function renderCharacterCardFields(article) {
+    const isCharacter = (article?.template || '') === 'character' || Boolean(article?.characterCard?.enabled);
+    if (els.articleTemplate) els.articleTemplate.value = isCharacter ? 'character' : 'general';
+    setCharacterPanelVisible(isCharacter);
+    const card = { ...defaultCharacterCard(), ...(article?.characterCard || {}) };
+    if (els.characterImage) els.characterImage.value = card.image || article?.image || '';
+    if (els.characterImageSelect) els.characterImageSelect.value = card.image || article?.image || '';
+    if (els.characterImageAlt) els.characterImageAlt.value = card.imageAlt || article?.title || '';
+    if (els.characterCaption) els.characterCaption.value = card.caption || '';
+    setMiniHTML(els.characterType, card.type || '');
+    setMiniHTML(els.characterActivity, card.activity || '');
+    setMiniHTML(els.characterEntourage, card.entourage || '');
+    setMiniHTML(els.characterEnemyOf, card.enemyOf || '');
+    setMiniHTML(els.characterFirstAppearance, card.firstAppearance || '');
+    setMiniHTML(els.characterStatus, card.status || '');
+  }
+
+  function collectCharacterCardFromForm() {
+    const enabled = els.articleTemplate?.value === 'character';
+    return {
+      ...defaultCharacterCard(),
+      enabled,
+      image: els.characterImage?.value?.trim() || '',
+      imageAlt: els.characterImageAlt?.value?.trim() || '',
+      caption: els.characterCaption?.value?.trim() || '',
+      type: getMiniHTML(els.characterType),
+      activity: getMiniHTML(els.characterActivity),
+      entourage: getMiniHTML(els.characterEntourage),
+      enemyOf: getMiniHTML(els.characterEnemyOf),
+      firstAppearance: getMiniHTML(els.characterFirstAppearance),
+      status: getMiniHTML(els.characterStatus)
+    };
   }
 
   function saveArticleFromForm(withLog = true) {
@@ -603,6 +832,12 @@
     article.image = els.articleImage.value.trim();
     article.summary = els.articleSummary.value.trim();
     article.categories = collectArticleCategories();
+    article.template = els.articleTemplate?.value || 'general';
+    article.characterCard = collectCharacterCardFromForm();
+    if (article.template === 'character' && article.characterCard.image && !article.image) {
+      article.image = article.characterCard.image;
+      els.articleImage.value = article.image;
+    }
     article.bodyHtml = els.articleBody.value;
     if (oldSlug !== nextSlug) {
       state.selectedArticleSlug = nextSlug;
@@ -627,6 +862,8 @@
       summary: '',
       image: '',
       categories: firstCategory ? [firstCategory] : [],
+      template: 'general',
+      characterCard: defaultCharacterCard(),
       bodyHtml: '<p>Nouveau contenu.</p>'
     });
     state.selectedArticleSlug = slug;
@@ -650,7 +887,13 @@
     const article = getSelectedArticle();
     if (!article) return;
     syncRichToTextarea(els.articleRichEditor, els.articleBody);
-    els.articlePreview.innerHTML = `<article class="article"><header><h1>${escapeHTML(els.articleTitle.value)}</h1></header><div>${els.articleBody.value}</div></article>`;
+    const previewArticle = {
+      title: els.articleTitle.value,
+      template: els.articleTemplate?.value || 'general',
+      characterCard: collectCharacterCardFromForm(),
+      bodyHtml: els.articleBody.value
+    };
+    els.articlePreview.innerHTML = `<article class="article"><header><h1>${escapeHTML(previewArticle.title)}</h1></header><div>${buildArticleBodyHtml(previewArticle)}</div></article>`;
   }
 
   function renderCategoryList() {
@@ -772,6 +1015,7 @@
 
   function renderImageSelectors() {
     populateImageSelect(els.articleImageSelect, els.articleImage?.value || '');
+    populateImageSelect(els.characterImageSelect, els.characterImage?.value || '');
     populateImageSelect(els.categoryImageSelect, els.categoryImage?.value || '');
     $$('.rich-image-select').forEach((select) => populateImageSelect(select, ''));
   }
@@ -824,6 +1068,40 @@
     renderImageSelectors();
     renderPendingImages();
     log(`Image ajoutée à la file : ${path}.`, 'ok');
+  }
+
+  function buildCharacterCardHtml(article) {
+    const card = { ...defaultCharacterCard(), ...(article.characterCard || {}) };
+    if (!card.enabled) return '';
+    const imagePath = card.image || article.image || '';
+    const imageAlt = card.imageAlt || article.title || '';
+    const imageHtml = imagePath ? `<figure class="infobox-image">
+<a href="${escapeHTML(imagePath)}">
+<img alt="${escapeHTML(imageAlt)}" src="${escapeHTML(imagePath)}"/>
+</a>
+${card.caption ? `<figcaption class="infobox-caption">${card.caption}</figcaption>` : ''}
+</figure>` : '';
+    const rows = characterFieldDefinitions
+      .map(([key, label]) => {
+        const value = card[key] || '';
+        if (!stripHTML(value)) return '';
+        return `<div class="infobox-row">
+<h3 class="infobox-label">${escapeHTML(label)}</h3>
+<div class="infobox-value">${value}</div>
+</div>`;
+      })
+      .filter(Boolean)
+      .join('\n');
+    return `<aside class="infobox">
+<h2 class="infobox-title">${escapeHTML(article.title || '')}</h2>
+${imageHtml}
+${rows}
+</aside>`;
+  }
+
+  function buildArticleBodyHtml(article) {
+    return `${buildCharacterCardHtml(article)}
+${article.bodyHtml || ''}`.trim();
   }
 
   const templates = {
@@ -948,7 +1226,7 @@
         siteTitle: escapeHTML(site.title || ''),
         articleTitle: escapeHTML(article.title),
         articleCategories: escapeHTML(article.categories.join(', ')),
-        articleBodyHtml: article.bodyHtml || ''
+        articleBodyHtml: buildArticleBodyHtml(article)
       });
       files.set(`pages/${article.slug}.html`, pageHTML);
     });
@@ -968,7 +1246,7 @@
       path: `pages/${article.slug}.html`,
       categories: article.categories,
       summary: article.summary,
-      searchText: normalizeForSearch([article.title, article.summary, article.categories.join(' '), stripHTML(article.bodyHtml)].join(' '))
+      searchText: normalizeForSearch([article.title, article.summary, article.categories.join(' '), stripHTML(buildArticleBodyHtml(article))].join(' '))
     }));
 
     files.set('data/articles.json', `${JSON.stringify(articlesData, null, 2)}\n`);
@@ -1225,17 +1503,15 @@
     editor.focus();
     document.execCommand('formatBlock', false, select.value);
     syncRichToTextarea(editor, document.getElementById(block.dataset.richTarget));
+    if (block.dataset.richTarget === 'article-body') renderArticlePreview();
+    if (block.dataset.richTarget === 'home-intro-html') collectHomeFromForm();
   }
 
   function insertRichLink(button) {
     const block = button.closest('.rich-editor-block');
     const editor = getEditorFromBlock(block);
     if (!editor) return;
-    const url = prompt('Adresse du lien à insérer :');
-    if (!url) return;
-    editor.focus();
-    document.execCommand('createLink', false, url);
-    syncRichToTextarea(editor, document.getElementById(block.dataset.richTarget));
+    openLinkDialog(editor);
   }
 
   function insertRichImage(button) {
@@ -1256,7 +1532,11 @@
   }
 
   function setupRichEditors() {
+    document.addEventListener('selectionchange', rememberRichSelection);
     $$('.rich-editor').forEach((editor) => {
+      editor.addEventListener('focus', () => { activeRichEditable = editor; rememberRichSelection(); });
+      editor.addEventListener('keyup', rememberRichSelection);
+      editor.addEventListener('mouseup', rememberRichSelection);
       editor.addEventListener('input', () => {
         const block = editor.closest('.rich-editor-block');
         const target = document.getElementById(block.dataset.richTarget);
@@ -1264,6 +1544,12 @@
         if (block.dataset.richTarget === 'article-body') renderArticlePreview();
         if (block.dataset.richTarget === 'home-intro-html') collectHomeFromForm();
       });
+    });
+    $$('.rich-mini').forEach((editor) => {
+      editor.addEventListener('focus', () => { activeRichEditable = editor; rememberRichSelection(); });
+      editor.addEventListener('keyup', rememberRichSelection);
+      editor.addEventListener('mouseup', rememberRichSelection);
+      editor.addEventListener('input', renderArticlePreview);
     });
     $$('.rich-editor-block').forEach((block) => {
       const textarea = document.getElementById(block.dataset.richTarget);
@@ -1303,8 +1589,25 @@
     $('#new-article').addEventListener('click', newArticle);
     $('#save-article-local').addEventListener('click', () => saveArticleFromForm(true));
     $('#delete-article-local').addEventListener('click', deleteArticle);
-    [els.articleTitle, els.articleSlug, els.articleImage, els.articleSummary, els.articleBody]
+    [els.articleTitle, els.articleSlug, els.articleImage, els.articleSummary, els.articleBody, els.characterImage, els.characterImageAlt, els.characterCaption]
+      .filter(Boolean)
       .forEach((input) => input.addEventListener('input', () => renderArticlePreview()));
+    els.articleTemplate?.addEventListener('change', () => {
+      setCharacterPanelVisible(els.articleTemplate.value === 'character');
+      renderArticlePreview();
+    });
+    els.characterImageSelect?.addEventListener('change', () => {
+      els.characterImage.value = els.characterImageSelect.value;
+      if (!els.articleImage.value) els.articleImage.value = els.characterImageSelect.value;
+      renderArticlePreview();
+    });
+    els.characterFieldLink?.addEventListener('click', () => openLinkDialog(activeRichEditable?.classList.contains('rich-mini') ? activeRichEditable : null));
+    els.characterFieldUnlink?.addEventListener('click', () => unlinkSelection(activeRichEditable?.classList.contains('rich-mini') ? activeRichEditable : null));
+    $('#apply-link')?.addEventListener('click', () => {
+      applyLink(els.linkUrl.value.trim(), els.linkTitle.value.trim());
+      els.linkDialog?.close();
+    });
+    $('#cancel-link')?.addEventListener('click', () => els.linkDialog?.close());
 
     $('#new-category').addEventListener('click', newCategory);
     $('#save-category-local').addEventListener('click', () => saveCategoryFromForm(true));

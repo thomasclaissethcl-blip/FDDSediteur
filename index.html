@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FDDS Editor v0.3</title>
+  <title>FDDS Editor v0.4</title>
   <link rel="stylesheet" href="assets/editor.css" />
   <script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script defer src="assets/editor.js"></script>
@@ -160,7 +160,60 @@
               <label>Résumé de carte
                 <input id="article-summary" />
               </label>
+              <label>Type d’article
+                <select id="article-template">
+                  <option value="general">Article général</option>
+                  <option value="character">Article personnage</option>
+                </select>
+              </label>
             </div>
+            <section class="template-panel" id="character-card-panel" hidden>
+              <div class="template-panel-heading">
+                <div>
+                  <p class="section-kicker">Template personnage</p>
+                  <h3>Carte de personnage</h3>
+                </div>
+                <p class="help-text">Ces champs génèrent automatiquement la carte flottante de l’article.</p>
+              </div>
+              <div class="form-grid two">
+                <label>Image de la carte
+                  <input id="character-image" placeholder="assets/images/..." />
+                </label>
+                <label>Choisir une image existante
+                  <select id="character-image-select"></select>
+                </label>
+                <label>Texte alternatif de l’image
+                  <input id="character-image-alt" />
+                </label>
+                <label>Légende de l’image
+                  <input id="character-caption" />
+                </label>
+              </div>
+              <div class="mini-toolbar" aria-label="Outils pour les champs de carte personnage">
+                <button type="button" class="secondary" id="character-field-link">Créer un lien sur la sélection</button>
+                <button type="button" class="secondary" id="character-field-unlink">Retirer le lien</button>
+              </div>
+              <div class="character-field-grid">
+                <label>Type
+                  <div id="character-type" class="rich-mini" contenteditable="true" role="textbox" aria-multiline="true"></div>
+                </label>
+                <label>Activité
+                  <div id="character-activity" class="rich-mini" contenteditable="true" role="textbox" aria-multiline="true"></div>
+                </label>
+                <label>Entourage
+                  <div id="character-entourage" class="rich-mini" contenteditable="true" role="textbox" aria-multiline="true"></div>
+                </label>
+                <label>Ennemi de
+                  <div id="character-enemy-of" class="rich-mini" contenteditable="true" role="textbox" aria-multiline="true"></div>
+                </label>
+                <label>Première apparition
+                  <div id="character-first-appearance" class="rich-mini" contenteditable="true" role="textbox" aria-multiline="true"></div>
+                </label>
+                <label>État
+                  <div id="character-status" class="rich-mini" contenteditable="true" role="textbox" aria-multiline="true"></div>
+                </label>
+              </div>
+            </section>
             <fieldset class="checkbox-group">
               <legend>Catégories</legend>
               <div id="article-categories"></div>
@@ -301,5 +354,21 @@
       <pre id="log-output"></pre>
     </section>
   </main>
+  <dialog class="link-dialog" id="link-dialog">
+    <form method="dialog" class="link-dialog-panel">
+      <h2>Créer ou modifier un lien</h2>
+      <p class="help-text">Sélectionnez du texte dans un champ éditable, puis renseignez la cible du lien.</p>
+      <label>URL ou route interne
+        <input id="link-url" placeholder="ex. #/vega ou https://..." />
+      </label>
+      <label>Titre du lien, facultatif
+        <input id="link-title" />
+      </label>
+      <div class="actions-row">
+        <button type="button" id="apply-link">Appliquer le lien</button>
+        <button type="button" class="secondary" id="cancel-link">Annuler</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>
