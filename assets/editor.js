@@ -18,7 +18,6 @@
     siteCss: '',
     loaded: false,
     lock: {
-      branch: 'fdds-editor-lock',
       filePath: '.editor-lock.json',
       sessionId: '',
       editorName: '',
@@ -66,7 +65,6 @@
     articleImage: $('#article-image'),
     articleImageSelect: $('#article-image-select'),
     articleSummary: $('#article-summary'),
-    articleTemplate: $('#article-template'),
     characterCardToggle: $('#character-card-toggle'),
     characterPanel: $('#character-card-panel'),
     characterImage: $('#character-image'),
@@ -409,10 +407,6 @@
     getOrCreateSessionId();
   }
 
-  function getLockBranchName() {
-    return state.lock.branch;
-  }
-
   function getLockFilePath() {
     return state.lock.filePath;
   }
@@ -500,18 +494,28 @@
     }
   }
 
+  async function cleanupLegacyLockBranch() {
+    const legacyBranch = 'fdds-editor-lock';
+    if (state.config.branch === legacyBranch) return;
+    try {
+      const deleted = await deleteGitRefOptional(legacyBranch);
+      if (deleted) log('Ancienne branche technique de verrou supprimée.', 'ok');
+    } catch (error) {
+      log(`Ancienne branche technique de verrou non supprimée : ${error.message}`, 'error');
+    }
+  }
+
   async function getTextFileFromRef(path, ref) {
     const fullPath = repoPath(path);
-    const data = await githubFetchOptional(`/contents/${encodeURIComponent(fullPath).replace(/%2F/g, '/')}?ref=${encodeURIComponent(ref)}`);
+    const data = await githubFetchOptional(`/contents/${encodeURIComponent(fullPath).replace(/%2F/g, '/')}?ref=${encodeURIComponent(ref)}&t=${Date.now()}`);
     if (!data || Array.isArray(data) || data.type !== 'file') return null;
     return base64ToUtf8(data.content);
   }
 
   async function readEditorLock() {
-    const branch = state.config.branch || 'main';
-    const ref = await getGitRefOptional(branch);
+    const ref = await getGitRefOptional(state.config.branch);
     if (!ref?.object?.sha) return null;
-    const text = await getTextFileFromRef(getLockFilePath(), branch);
+    const text = await getTextFileFromRef(getLockFilePath(), state.config.branch);
     if (!text) return { refSha: ref.object.sha, data: null };
     try {
       return { refSha: ref.object.sha, data: JSON.parse(text) };
@@ -538,11 +542,9 @@
     };
   }
 
-  async function commitLockData(lockData, createBranch = false) {
-    // Le verrou est volontairement écrit sur la branche cible du site.
-    // On ne crée plus de branche technique fdds-editor-lock.
-    const message = `Verrou éditorial FDDS — ${lockData.locked ? 'prise' : 'renouvellement'} — ${lockData.editorName}`;
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+  async function commitLockData(lockData, retries = 2) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
       try {
         const parentRef = await getGitRef(state.config.branch);
         const parentSha = parentRef.object?.sha;
@@ -557,53 +559,19 @@
           type: 'blob',
           content: `${JSON.stringify(lockData, null, 2)}\n`
         }]);
-        const newCommit = await createGitCommit(message, newTree.sha, parentSha);
-        await updateGitRef(state.config.branch, newCommit.sha, false);
+        const newCommit = await createGitCommit(`Verrou éditorial FDDS — ${lockData.locked ? 'prise' : 'libération'} — ${lockData.editorName}`, newTree.sha, parentSha);
+        await updateBranchRef(newCommit.sha);
         state.lock.lastRemote = lockData;
         return newCommit;
       } catch (error) {
-        const conflict = String(error.message || '').includes('GitHub 409') || String(error.message || '').includes('GitHub 422');
-        if (!conflict || attempt === 3) throw error;
-        await sleep(500 * attempt);
+        lastError = error;
+        const message = String(error.message || '');
+        if (!message.includes('GitHub 409') && !message.includes('GitHub 422')) throw error;
+        if (attempt >= retries) throw error;
+        await sleep(600 + attempt * 600);
       }
     }
-  }
-
-  async function deleteEditorLockFile() {
-    const message = `Verrou éditorial FDDS — libération — ${state.lock.editorName || 'Chroniqueur anonyme'}`;
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      try {
-        const parentRef = await getGitRef(state.config.branch);
-        const parentSha = parentRef.object?.sha;
-        if (!parentSha) throw new Error('Impossible de déterminer le commit de référence du verrou.');
-        const parentCommit = await getGitCommit(parentSha);
-        const baseTreeSha = parentCommit.tree?.sha;
-        if (!baseTreeSha) throw new Error('Impossible de déterminer l’arbre Git du verrou.');
-        const newTree = await createGitTree(baseTreeSha, [{
-          path: repoPath(getLockFilePath()),
-          mode: '100644',
-          type: 'blob',
-          sha: null
-        }]);
-        const newCommit = await createGitCommit(message, newTree.sha, parentSha);
-        await updateGitRef(state.config.branch, newCommit.sha, false);
-        return newCommit;
-      } catch (error) {
-        const notFound = String(error.message || '').includes('GitHub 422') && String(error.message || '').includes('does not exist');
-        if (notFound) return null;
-        const conflict = String(error.message || '').includes('GitHub 409') || String(error.message || '').includes('GitHub 422');
-        if (!conflict || attempt === 3) throw error;
-        await sleep(500 * attempt);
-      }
-    }
-  }
-
-  async function cleanupLegacyLockBranch() {
-    try {
-      await deleteGitRefOptional(getLockBranchName());
-    } catch (error) {
-      log(`Ancienne branche de verrou non supprimée : ${error.message}`, 'error');
-    }
+    throw lastError;
   }
 
   function showBusyDialog(lock) {
@@ -638,7 +606,6 @@
   async function acquireEditorLock({ force = false } = {}) {
     initLockIdentity();
     state.lock.releasing = false;
-    await cleanupLegacyLockBranch();
     const remote = await readEditorLock();
     const remoteLock = remote?.data;
     const activeOtherLock = isLockActive(remoteLock) && !isOwnLock(remoteLock);
@@ -654,7 +621,7 @@
 
     const nextLock = buildLockData(isOwnLock(remoteLock) ? remoteLock : {}, true);
     try {
-      await commitLockData(nextLock, !remote?.refSha);
+      await commitLockData(nextLock);
     } catch (error) {
       if (String(error.message || '').includes('GitHub 409') || String(error.message || '').includes('GitHub 422')) {
         const latest = await readEditorLock();
@@ -692,7 +659,7 @@
     }
     const nextLock = buildLockData(isOwnLock(remoteLock) ? remoteLock : {}, true);
     if (state.lock.releasing) return false;
-    await commitLockData(nextLock, !remote?.refSha);
+    await commitLockData(nextLock);
     if (state.lock.releasing) return false;
     state.lock.acquired = true;
     state.lock.lastRemote = nextLock;
@@ -726,34 +693,23 @@
     if (!silent) log('Libération du verrou éditorial en cours...');
 
     try {
-      let remote = await readEditorLock();
-      let remoteLock = remote?.data;
+      const remote = await readEditorLock();
+      const remoteLock = remote?.data;
 
-      if (!remote?.refSha) {
+      if (!remote?.refSha || !remoteLock || !isLockActive(remoteLock)) {
         state.lock.acquired = false;
         state.lock.lastRemote = null;
         renderLockStatus('Aucun verrou éditorial actif.', false);
-        if (!silent) log('Aucun verrou distant à libérer.', 'ok');
+        if (!silent) log('Aucun verrou actif à libérer.', 'ok');
         return;
       }
 
-      if (remoteLock && !isOwnLock(remoteLock)) {
+      if (!isOwnLock(remoteLock)) {
         throw new Error(`Le verrou distant est détenu par ${lockDisplayName(remoteLock)}. Impossible de le libérer depuis cette session.`);
       }
 
-      try {
-        await deleteEditorLockFile();
-      } catch (deleteError) {
-        log(`Suppression directe du verrou impossible. Tentative de libération par écriture : ${deleteError.message}`, 'error');
-        remote = await readEditorLock();
-        remoteLock = remote?.data;
-        if (remote?.refSha && (!remoteLock || isOwnLock(remoteLock))) {
-          const releasedLock = buildLockData(remoteLock || {}, false);
-          await commitLockData(releasedLock, false);
-        } else if (remoteLock && !isOwnLock(remoteLock)) {
-          throw new Error(`Le verrou distant est détenu par ${lockDisplayName(remoteLock)}. Impossible de le libérer depuis cette session.`);
-        }
-      }
+      const releasedLock = buildLockData(remoteLock || {}, false);
+      await commitLockData(releasedLock);
 
       await sleep(700);
       const verification = await readEditorLock();
@@ -764,7 +720,7 @@
       state.lock.acquired = false;
       state.lock.lastRemote = null;
       renderLockStatus('Verrou éditorial libéré.', false);
-      if (!silent) log('Verrou éditorial libéré côté GitHub.', 'ok');
+      if (!silent) log('Verrou éditorial libéré sur la branche cible.', 'ok');
     } catch (error) {
       if (!silent) log(`Impossible de libérer le verrou : ${error.message}`, 'error');
       renderLockStatus(`Libération impossible : ${error.message}`, false);
@@ -1054,6 +1010,7 @@ ${home.introHtml || ''}
       setStatus('Chargement en cours', false);
       log('Chargement du site depuis GitHub...');
       if (!options.skipLock) {
+        await cleanupLegacyLockBranch();
         const hasLock = await acquireEditorLock();
         if (!hasLock) {
           setStatus('Site occupé', false);
@@ -1176,52 +1133,46 @@ ${home.introHtml || ''}
 
   function hasCharacterCardData(card) {
     if (!card || typeof card !== 'object') return false;
-    return ['caption', 'type', 'activity', 'entourage', 'enemyOf', 'firstAppearance', 'status']
+    return ['image', 'imageAlt', 'caption', 'type', 'activity', 'entourage', 'enemyOf', 'firstAppearance', 'status']
       .some((key) => stripHTML(String(card[key] || '')).trim());
   }
 
-  function hasExplicitCharacterCardFlag(card) {
+  function articleHasExplicitCharacterChoice(card) {
     return Boolean(card && typeof card === 'object' && Object.prototype.hasOwnProperty.call(card, 'enabled'));
   }
 
   function isCharacterArticle(article) {
     if (!article) return false;
-    return article.template === 'character' || article.type === 'character';
+    const card = article.characterCard && typeof article.characterCard === 'object' ? article.characterCard : null;
+    if (articleHasExplicitCharacterChoice(card)) return Boolean(card.enabled);
+    return hasCharacterCardData(card) || extractCharacterCardFromBody(article.bodyHtml || '').found;
   }
 
-  function normalizeCharacterCard(card, bodyHtml = '', categories = []) {
+  function normalizeCharacterCard(card, bodyHtml = '') {
     const extracted = extractCharacterCardFromBody(bodyHtml);
     const inputCard = card && typeof card === 'object' ? card : {};
-    const explicit = hasExplicitCharacterCardFlag(inputCard);
+    const hasExplicitChoice = articleHasExplicitCharacterChoice(inputCard);
     const merged = { ...defaultCharacterCard(), ...extracted.card, ...inputCard };
 
-    if (inputCard.manual === true) {
-      merged.enabled = inputCard.enabled === true;
-      return merged;
+    if (hasExplicitChoice) {
+      merged.enabled = Boolean(inputCard.enabled);
+    } else {
+      merged.enabled = Boolean(extracted.found || hasCharacterCardData(inputCard));
     }
 
-    if (explicit) {
-      // Une carte préremplie automatiquement avec seulement le titre ou l’image ne doit pas devenir une vraie carte.
-      merged.enabled = inputCard.enabled === true && hasCharacterCardData(merged);
-      return merged;
-    }
-
-    merged.enabled = Boolean(extracted.found && hasCharacterCardData(merged));
     return merged;
   }
 
   function normalizeArticle(article) {
     const categories = Array.isArray(article.categories) ? article.categories : [];
     const extracted = extractCharacterCardFromBody(article.bodyHtml || '');
-    const characterCard = normalizeCharacterCard(article.characterCard, article.bodyHtml || '', categories);
-    const template = article.template || article.type || (characterCard.enabled ? 'character' : 'general');
+    const characterCard = normalizeCharacterCard(article.characterCard, article.bodyHtml || '');
     return {
       slug: article.slug || slugify(article.title),
       title: article.title || 'Nouvel article',
       summary: article.summary || '',
-      image: article.image || characterCard.image || '',
+      image: article.image || '',
       categories,
-      template: template === 'character' ? 'character' : 'general',
       characterCard,
       bodyHtml: extracted.found ? extracted.bodyHtml : (article.bodyHtml || '')
     };
@@ -1310,7 +1261,6 @@ ${home.introHtml || ''}
       els.articleImage.value = '';
       if (els.articleImageSelect) els.articleImageSelect.value = '';
       els.articleSummary.value = '';
-      if (els.articleTemplate) els.articleTemplate.value = 'general';
       if (els.characterCardToggle) els.characterCardToggle.checked = false;
       setCharacterPanelVisible(false);
       renderCharacterCardFields(null);
@@ -1360,9 +1310,9 @@ ${home.introHtml || ''}
   }
 
   function renderCharacterCardFields(article) {
-    if (els.articleTemplate) els.articleTemplate.value = isCharacterArticle(article) ? 'character' : 'general';
+    const isCharacter = isCharacterArticle(article);
+    syncCharacterControls(isCharacter);
     const card = { ...defaultCharacterCard(), ...(article?.characterCard || {}) };
-    syncCharacterControls(Boolean(card.enabled));
     if (els.characterImage) els.characterImage.value = card.image || article?.image || '';
     if (els.characterImageSelect) els.characterImageSelect.value = card.image || article?.image || '';
     if (els.characterImageAlt) els.characterImageAlt.value = card.imageAlt || article?.title || '';
@@ -1377,13 +1327,9 @@ ${home.introHtml || ''}
 
   function collectCharacterCardFromForm() {
     const enabled = isCharacterFormEnabled();
-    if (!enabled) {
-      return { ...defaultCharacterCard(), enabled: false, manual: false };
-    }
     return {
       ...defaultCharacterCard(),
-      enabled: true,
-      manual: true,
+      enabled,
       image: els.characterImage?.value?.trim() || '',
       imageAlt: els.characterImageAlt?.value?.trim() || '',
       caption: els.characterCaption?.value?.trim() || '',
@@ -1408,9 +1354,8 @@ ${home.introHtml || ''}
     article.image = els.articleImage.value.trim();
     article.summary = els.articleSummary.value.trim();
     article.categories = collectArticleCategories();
-    article.template = els.articleTemplate?.value === 'character' ? 'character' : 'general';
     article.characterCard = collectCharacterCardFromForm();
-    if (article.characterCard.enabled && article.characterCard.image && !article.image) {
+    if (isCharacterFormEnabled() && article.characterCard.image && !article.image) {
       article.image = article.characterCard.image;
       els.articleImage.value = article.image;
     }
@@ -1438,7 +1383,6 @@ ${home.introHtml || ''}
       summary: '',
       image: '',
       categories: firstCategory ? [firstCategory] : [],
-      template: 'general',
       characterCard: defaultCharacterCard(),
       bodyHtml: '<p>Nouveau contenu.</p>'
     });
@@ -1468,7 +1412,6 @@ ${home.introHtml || ''}
       slug: els.articleSlug.value || slugify(els.articleTitle.value || 'article'),
       title: els.articleTitle.value,
       categories: checkedCategories,
-      template: isCharacterFormEnabled() ? 'character' : 'general',
       characterCard: collectCharacterCardFromForm(),
       bodyHtml: els.articleBody.value
     };
@@ -2175,8 +2118,7 @@ ${article.bodyHtml || ''}`.trim();
     { selector: '#article-image', title: 'Image principale', text: 'Chemin de l’image utilisée pour la carte de l’article sur la page d’accueil, par exemple assets/images/vega.webp.' },
     { selector: '#article-image-select', title: 'Choisir une image existante', text: 'Permet de sélectionner une image déjà connue du dépôt sans recopier son chemin manuellement.' },
     { selector: '#article-summary', title: 'Résumé de carte', text: 'Texte court affiché sur la carte de l’article. Il doit donner envie d’ouvrir l’article sans remplacer son contenu.' },
-    { selector: '#article-template', title: 'Type d’article', text: 'Article général correspond à une page classique. Article personnage indique le type éditorial de l’article. La carte personnage se gère séparément avec la case dédiée.' },
-    { selector: '#character-card-toggle', title: 'Carte personnage', text: 'Active ou désactive réellement la carte personnage. Si la case est décochée puis l’article enregistré et publié, aucune carte personnage n’est générée dans l’article final.' },
+    { selector: '#character-card-toggle', title: 'Carte personnage', text: 'Active ou désactive l’affichage de la carte personnage. Quand elle est cochée, les champs dédiés sont utilisés pour générer la carte dans l’article public. Quand elle est décochée, aucune carte n’est générée, même si l’article appartient à la catégorie Personnage.' },
     { selector: '#character-card-panel', title: 'Champs de carte personnage', text: 'Ces champs alimentent la carte personnage affichée dans l’article public. Les champs riches acceptent aussi des liens internes ou externes.', mode: 'self' },
     { selector: '#character-image', title: 'Image de la carte', text: 'Image affichée dans la carte personnage. Elle peut être différente de l’image principale utilisée pour la carte d’article.' },
     { selector: '#character-image-select', title: 'Image existante', text: 'Sélectionne une image déjà présente dans le dépôt pour l’utiliser dans la carte personnage.' },
@@ -2407,9 +2349,6 @@ ${article.bodyHtml || ''}`.trim();
     [els.articleTitle, els.articleSlug, els.articleImage, els.articleSummary, els.articleBody, els.characterImage, els.characterImageAlt, els.characterCaption]
       .filter(Boolean)
       .forEach((input) => input.addEventListener('input', () => renderArticlePreview()));
-    els.articleTemplate?.addEventListener('change', () => {
-      renderArticlePreview();
-    });
     els.characterCardToggle?.addEventListener('change', () => {
       syncCharacterControls(els.characterCardToggle.checked);
       renderArticlePreview();

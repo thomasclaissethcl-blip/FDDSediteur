@@ -168,24 +168,18 @@
               <label>Résumé de carte
                 <input id="article-summary" />
               </label>
-              <label>Type d’article
-                <select id="article-template">
-                  <option value="general">Article général</option>
-                  <option value="character">Article personnage</option>
-                </select>
-              </label>
               <label class="check-line character-card-toggle-line">
                 <input id="character-card-toggle" type="checkbox" />
-                Créer une carte personnage
+                Afficher une carte personnage
               </label>
             </div>
             <section class="template-panel" id="character-card-panel" hidden>
               <div class="template-panel-heading">
                 <div>
-                  <p class="section-kicker">Template personnage</p>
+                  <p class="section-kicker">Carte optionnelle</p>
                   <h3>Carte de personnage</h3>
                 </div>
-                <p class="help-text">Ces champs génèrent automatiquement la carte flottante de l’article.</p>
+                <p class="help-text">Ces champs alimentent la carte flottante de l’article lorsque l’option est activée.</p>
               </div>
               <div class="form-grid two">
                 <label>Image de la carte
@@ -474,7 +468,6 @@
 <pre><code>assets/images/nom-de-l-image.webp</code></pre>
 <p>Le champ <strong>Choisir une image existante</strong> permet de sélectionner une image déjà repérée dans le dépôt.</p>
 <p>Le champ <strong>Résumé de carte</strong> correspond au court texte affiché dans la carte de l’article sur la page d’accueil.</p>
-<p>Le champ <strong>Type d’article</strong> permet de choisir entre un article général et un article personnage.</p>
 <p>Les cases de catégories déterminent les filtres dans lesquels l’article apparaîtra sur la page d’accueil du site.</p>
 <h3>Modifier le corps d’un article</h3>
 <p>Le corps de l’article se modifie dans l’éditeur enrichi.</p>
@@ -485,10 +478,11 @@
 <p>Pour un lien externe, utilisez une URL complète, par exemple :</p>
 <pre><code>https://exemple.com</code></pre>
 <p>Le panneau <strong>Afficher le HTML source de l’article</strong> permet de contrôler le code HTML du corps d’article. Il doit être utilisé avec prudence, car une erreur dans le HTML peut altérer le rendu public.</p>
-<h3>Créer un article personnage</h3>
-<p>Un article personnage est un article général auquel on ajoute une carte de personnage structurée.</p>
-<p>Pour créer ce type d’article, sélectionnez <strong>Article personnage</strong> dans le champ <strong>Type d’article</strong>, ou cochez <strong>Créer une carte personnage</strong>.</p>
-<p>La zone <strong>Carte de personnage</strong> apparaît alors. Elle permet de renseigner une carte standardisée, cohérente avec le style du site.</p>
+<h3>Afficher ou retirer une carte personnage</h3>
+<p>Il n’existe plus deux types d’articles séparés. Un article reste un article. Il devient un article de personnage uniquement lorsque l’option <strong>Afficher une carte personnage</strong> est cochée.</p>
+<p>Si une carte existe déjà dans l’article chargé, l’éditeur l’identifie et coche cette option afin de vous laisser décider si elle doit être conservée ou retirée.</p>
+<p>Quand l’option est cochée, la zone <strong>Carte de personnage</strong> apparaît. Elle permet de renseigner une carte standardisée, cohérente avec le style du site.</p>
+<p>Quand l’option est décochée, aucune carte personnage n’est générée dans l’article publié, même si des informations de carte restent conservées dans les données éditoriales.</p>
 <p>La carte de personnage comprend :</p>
 <ul>
 <li>une image ;</li>
@@ -503,7 +497,7 @@
 </ul>
 <p>Les champs textuels de la carte peuvent contenir des liens. Pour créer un lien dans l’un de ces champs, sélectionnez le texte concerné, puis cliquez sur <strong>Créer un lien sur la sélection</strong>.</p>
 <p>Le bouton <strong>Retirer le lien</strong> supprime le lien appliqué à la sélection courante.</p>
-<p>Lorsque l’article est généré, la carte est placée automatiquement au bon endroit dans la page publique.</p>
+<p>Lorsque l’article est généré, la carte est placée automatiquement au bon endroit dans la page publique uniquement si l’option <strong>Afficher une carte personnage</strong> est cochée.</p>
 <h3>Modifier les catégories</h3>
 <p>L’onglet <strong>Catégories</strong> permet de créer, modifier ou supprimer les catégories utilisées par le site.</p>
 <p>La colonne de gauche liste les catégories existantes.</p>
@@ -571,7 +565,7 @@ assets/images/</code></pre>
 <p>L’éditeur intègre un verrou éditorial pour éviter que deux chroniqueurs modifient le site en même temps.</p>
 <p>Avant de charger le site, renseignez le champ <strong>Nom du chroniqueur</strong>. Ce nom sera affiché à l’autre utilisateur si le site est déjà occupé.</p>
 <p>Au moment du chargement, l’éditeur tente de prendre le verrou. Si le site est libre, l’édition s’ouvre normalement. Si un autre chroniqueur est déjà en train de travailler, un message <strong>Occupé : un chroniqueur est en train de produire</strong> s’affiche et le chargement est bloqué.</p>
-<p>Le verrou est enregistré dans le fichier <code>.editor-lock.json</code> sur la branche cible, par exemple <code>main</code>. Il est renouvelé automatiquement pendant la session. Il expire automatiquement si l’éditeur est fermé brutalement ou si la connexion est interrompue.</p>
+<p>Le verrou est renouvelé automatiquement pendant la session. Il expire automatiquement si l’éditeur est fermé brutalement ou si la connexion est interrompue.</p>
 <p>Quand vous avez terminé, cliquez sur <strong>Quitter l’édition</strong> pour libérer le verrou immédiatement.</p>
 <p>Le bouton <strong>Forcer la reprise du verrou</strong> est réservé aux cas exceptionnels, par exemple si un verrou est resté bloqué alors que personne ne travaille réellement dans l’éditeur.</p>
       </div>
